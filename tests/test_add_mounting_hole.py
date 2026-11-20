@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 import pcbnew  # noqa: E402  — pcbnew is stubbed by conftest
 
+pytestmark = pytest.mark.stub_pcbnew
+
 
 @pytest.fixture
 def fresh_pcbnew_mock(monkeypatch):
@@ -37,11 +39,11 @@ def fresh_pcbnew_mock(monkeypatch):
     pcbnew.reset_mock()
     # PAD_ATTRIB constants must compare unequal so the conditional in the
     # implementation picks the right branch.
-    pcbnew.PAD_ATTRIB_NPTH = "NPTH"
-    pcbnew.PAD_ATTRIB_PTH = "PTH"
-    pcbnew.PAD_SHAPE_CIRCLE = "circle"
-    pcbnew.F_Mask = "F.Mask"
-    pcbnew.B_Mask = "B.Mask"
+    monkeypatch.setattr(pcbnew, "PAD_ATTRIB_NPTH", "NPTH", raising=False)
+    monkeypatch.setattr(pcbnew, "PAD_ATTRIB_PTH", "PTH", raising=False)
+    monkeypatch.setattr(pcbnew, "PAD_SHAPE_CIRCLE", "circle", raising=False)
+    monkeypatch.setattr(pcbnew, "F_Mask", "F.Mask", raising=False)
+    monkeypatch.setattr(pcbnew, "B_Mask", "B.Mask", raising=False)
     return pcbnew
 
 

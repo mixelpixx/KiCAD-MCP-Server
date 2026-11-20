@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.file_io import read_text_preserve_newline, write_text_atomic
 from utils.sexpr_format import (
     QUOTED_VALUE,
     QUOTED_VALUE_SKIP,
@@ -582,10 +583,10 @@ class DynamicSymbolLoader:
         Inject a symbol definition into a schematic's lib_symbols section.
         Uses text manipulation to preserve file formatting.
         """
+        schematic_path = Path(schematic_path)
         full_name = f"{library_name}:{symbol_name}"
 
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content, newline = read_text_preserve_newline(schematic_path)
 
         # Check if symbol already exists
         if f'(symbol "{full_name}"' in content:
@@ -617,8 +618,7 @@ class DynamicSymbolLoader:
         # Insert the symbol block just before the closing ) of lib_symbols
         content = content[:lib_sym_end] + "\n    " + indented_block + "\n  " + content[lib_sym_end:]
 
-        with open(schematic_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        write_text_atomic(schematic_path, content, newline)
 
         # Handle both Path objects and strings
         sch_name = schematic_path.name if hasattr(schematic_path, "name") else str(schematic_path)
@@ -629,7 +629,7 @@ class DynamicSymbolLoader:
     def _extract_paren_block(text: str, start: int) -> str:
         """Return the substring from text[start] up to and including the matching closing paren."""
         end = match_paren(text, start)
-        return text[start : end + 1] if end != -1 else text[start:]
+        return text[start : end + 1] if end >= 0 else text[start:]
 
     def _extract_lib_property_positions(
         self,
@@ -1053,8 +1053,7 @@ class DynamicSymbolLoader:
 
         body = "\n".join(part for part in [properties_str, pins_str, instances_str] if part)
 
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content, newline = read_text_preserve_newline(schematic_path)
 
         # Emit the KiCad 10-only symbol attributes only into files whose declared
         # format version accepts them (#351). A KiCad 8 or 9 file never contains
@@ -1095,8 +1094,7 @@ class DynamicSymbolLoader:
         else:
             content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
 
-        with open(schematic_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        write_text_atomic(schematic_path, content, newline)
 
         logger.info(f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})")
         return True

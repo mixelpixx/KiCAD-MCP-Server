@@ -22,16 +22,20 @@ pytestmark = pytest.mark.unit
 # The conftest.py-installed pcbnew MagicMock is already in sys.modules.
 # We set the FP_* integer constants we need once at module level so they are
 # stable for the life of the test session (conftest doesn't reset them).
+# Only on the stub: real pcbnew has these constants, and overwriting them at
+# import time (F_CrtYd = 0, which is F_Cu) broke later real-pcbnew tests that
+# read a courtyard.
 import pcbnew as _pcbnew_stub  # noqa: E402 — must come after sys.path insert
 
-_pcbnew_stub.FP_THROUGH_HOLE = 1
-_pcbnew_stub.FP_SMD = 2
-_pcbnew_stub.FP_EXCLUDE_FROM_POS_FILES = 4
-_pcbnew_stub.FP_EXCLUDE_FROM_BOM = 8
-_pcbnew_stub.FP_BOARD_ONLY = 16
-_pcbnew_stub.FP_DNP = 32
-_pcbnew_stub.F_CrtYd = 0
-_pcbnew_stub.B_CrtYd = 1
+if isinstance(_pcbnew_stub, MagicMock) or hasattr(_pcbnew_stub, "reset_mock"):
+    _pcbnew_stub.FP_THROUGH_HOLE = 1
+    _pcbnew_stub.FP_SMD = 2
+    _pcbnew_stub.FP_EXCLUDE_FROM_POS_FILES = 4
+    _pcbnew_stub.FP_EXCLUDE_FROM_BOM = 8
+    _pcbnew_stub.FP_BOARD_ONLY = 16
+    _pcbnew_stub.FP_DNP = 32
+    _pcbnew_stub.F_CrtYd = 0
+    _pcbnew_stub.B_CrtYd = 1
 
 
 # ---------------------------------------------------------------------------

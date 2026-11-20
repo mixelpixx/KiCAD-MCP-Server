@@ -883,9 +883,18 @@ class SchematicBatchCommands:
                 pass
             missing = sorted(power_nets - pwr_flag_nets)
             if missing:
+                # #523: the old text read as an instruction, and adding a flag
+                # silences exactly the "power pin not driven" finding a rail
+                # without a source should keep. Say what the flag does and when
+                # it is the right tool; a power symbol is what joins a pin to
+                # an existing rail.
                 return [
                     f"Power nets without PWR_FLAG: {', '.join(missing)}. "
-                    "Add a PWR_FLAG component to each to suppress ERC power-pin errors."
+                    "A PWR_FLAG marks a net as driven and silences the "
+                    '"power pin not driven" ERC; it belongs only where the rail '
+                    "is genuinely supplied from off the sheet (a connector or "
+                    "a battery). To tie a pin to an "
+                    "existing rail, place that rail's power symbol on the pin."
                 ]
         except Exception:
             pass
