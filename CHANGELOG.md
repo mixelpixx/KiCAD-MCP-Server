@@ -445,7 +445,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   "unknown command". It now creates a `PCB_GROUP` named `groupName` holding
   the given footprints, and the board is auto-saved like other board edits.
   Nothing is created when a reference isn't found (the reply names it) or a
-  footprint is already in a group, since KiCad allows only one.
+  footprint is already in a group, since KiCad allows only one (an unnamed
+  group is named by its uuid).
 
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and

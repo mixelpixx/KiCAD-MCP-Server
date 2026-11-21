@@ -114,6 +114,23 @@ def _payload_in_unit(payload: Any, unit: str) -> Any:
     return {key: _payload_in_unit(value, unit) for key, value in payload.items()}
 
 
+def _group_label(group: Any) -> str:
+    """Name a PCB group for a message: its name, or its uuid when it has none.
+
+    On KiCad 10 ``GetParentGroup()`` returns an ``EDA_GROUP``, whose uuid is on
+    the item ``AsEdaItem()`` returns; on 8 and 9 it is the ``PCB_GROUP`` itself.
+    """
+    name = group.GetName()
+    if name:
+        return f"'{name}'"
+    for item in (group, getattr(group, "AsEdaItem", lambda: None)()):
+        try:
+            return f"an unnamed group {item.m_Uuid.AsString()}"
+        except Exception:
+            continue
+    return "an unnamed group"
+
+
 class ComponentCommands(PlacementOptimizerCommands):
     """Handles component-related KiCAD operations"""
 
@@ -607,7 +624,7 @@ class ComponentCommands(PlacementOptimizerCommands):
             for ref, fp in footprints.items():
                 parent = fp.GetParentGroup()
                 if parent:
-                    grouped.append(f"{ref} (in '{parent.GetName()}')")
+                    grouped.append(f"{ref} (in {_group_label(parent)})")
             if grouped:
                 return {
                     "success": False,

@@ -100,6 +100,20 @@ def test_a_footprint_already_in_a_group_creates_nothing() -> None:
     board.Add.assert_not_called()
 
 
+def test_an_unnamed_group_is_named_by_its_uuid() -> None:
+    existing = MagicMock(name="unnamed-group")
+    existing.GetName.return_value = ""
+    existing.m_Uuid.AsString.return_value = "5f0e2b9a-0000-4000-8000-0000000000aa"
+    cmd, board, _ = _commands(_footprint("R1", group=existing))
+
+    result = cmd.group_components({"references": ["R1"], "groupName": "G"})
+
+    assert result["success"] is False
+    assert "(in '')" not in result["message"]
+    assert "5f0e2b9a-0000-4000-8000-0000000000aa" in result["message"]
+    board.Add.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "params",
     [
