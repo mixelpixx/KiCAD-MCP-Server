@@ -303,7 +303,11 @@ Returns the exact x/y coordinates of every pin on a schematic component. Useful 
 
 ### delete_schematic_wire
 
-Remove a wire from the schematic by start and end coordinates.
+Remove one wire segment from the schematic by its start and end coordinates.
+
+- Both stored end points of the segment must lie within 0.5 mm of `start` and `end`, in either order. The match is per segment: a run that KiCad split into several segments at a junction or a T is deleted one segment at a time.
+- On a miss, the reply lists the wire segments that end at or pass through each point, with their coordinates as stored in the file (`wiresAtStart`, `wiresAtEnd`). Use those coordinates for the next call.
+- `get_schematic_pin_locations` returns coordinates rounded to KiCad's schematic resolution (0.0001 mm), so they read the same as the file.
 
 | Parameter     | Type   | Required | Description                                  |
 | ------------- | ------ | -------- | -------------------------------------------- |
