@@ -353,7 +353,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "group_components",
-    "Group multiple PCB components together by name for easier selection and manipulation.",
+    "Put PCB components in a new KiCad group with the given name, for easier selection and moving. Nothing is created if a reference is not found or a component is already in a group.",
     {
       references: z.array(z.string()).describe("Reference designators of components to group"),
       groupName: z.string().describe("Name for the component group"),
