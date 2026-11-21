@@ -40,8 +40,10 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
         .string()
         .optional()
         .describe(
-          "Component reference (e.g., R1, U1). For power symbols (power:GND, …) " +
-            'omit it or pass "#PWR?" to use the next free #PWRnn in the project.',
+          "Component reference (e.g., R1, U1). Required except for power symbols: " +
+            'for power:GND, … omit it or pass "#PWR?" to use the next free #PWRnn ' +
+            "in the project (power:PWR_FLAG gets the next free #FLGnn). A non-power " +
+            "symbol placed without a reference is an error.",
         ),
       value: z.string().optional().describe("Component value"),
       footprint: z

@@ -2665,10 +2665,12 @@ SCHEMATIC_TOOLS = [
                 "reference": {
                     "type": "string",
                     "description": (
-                        "Reference designator (e.g., R1, C2, U3). For power symbols "
-                        '(power:GND, …) omit it or pass "#PWR?" to use the next free '
-                        "#PWRnn in the project; the reply's component_reference names "
-                        "the number chosen."
+                        "Reference designator (e.g., R1, C2, U3). Required except for "
+                        "power symbols: for power symbols (power:GND, …) omit it or "
+                        'pass "#PWR?" to use the next free #PWRnn in the project '
+                        "(power:PWR_FLAG gets the next free #FLGnn); a non-power "
+                        "symbol without a reference is an error. The reply's "
+                        "component_reference names the number chosen."
                     ),
                 },
                 "symbol": {

@@ -32,11 +32,13 @@ from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
-from utils.skip_items import skip_items
 from utils.sheet_tree import instance_paths
+from utils.skip_items import skip_items
 from utils.symbol_instances import (
     ReferenceAllocator,
+    _power_lib_ids,
     annotate_sheet,
+    definition_is_power,
     instance_report,
     project_references,
 )
@@ -69,8 +71,8 @@ def _xy(value: Any) -> Optional[List[float]]:
 _POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
 
 
-def _allocate_power_reference(schematic_file: Path) -> Optional[str]:
-    """The next unused ``#PWRnn`` in the schematic's project (#524).
+def _allocate_power_reference(schematic_file: Path, prefix: str = "#PWR") -> Optional[str]:
+    """The next unused ``{prefix}nn`` in the schematic's project (#524).
 
     Counts every reference on every sheet the root reaches, so a number
     taken on another sheet is never re-picked. Returns None when the
@@ -80,11 +82,41 @@ def _allocate_power_reference(schematic_file: Path) -> Optional[str]:
     try:
         root, _paths = instance_paths(schematic_file)
         return ReferenceAllocator(project_references(root, schematic_file)).next_free(
-            "#PWR", zero=True
+            prefix, zero=True
         )
     except Exception as e:
-        logger.warning("Could not allocate a #PWR reference for %s: %s", schematic_file, e)
+        logger.warning("Could not allocate a %s reference for %s: %s", prefix, schematic_file, e)
         return None
+
+
+def _is_power_symbol(loader: Any, schematic_file: Path, library: str, comp_type: str) -> bool:
+    """True when ``library:comp_type`` is a power symbol (#524).
+
+    The ``power:`` library prefix is the usual sign, but a project-library
+    symbol can carry the ``(power)`` flag instead. That is checked two ways,
+    both read-only and both falling back to the prefix when they find
+    nothing: the schematic's own ``lib_symbols`` (via ``_power_lib_ids`` —
+    the definition is already there when the symbol was placed before) and
+    the library definition itself (via the loader's cached extraction —
+    which is also how the placement itself resolves the symbol, so a first
+    placement is recognised too). A symbol neither check recognises is
+    treated as non-power.
+    """
+    lib_id = f"{library}:{comp_type}"
+    if lib_id.lower().startswith("power:"):
+        return True
+    try:
+        if lib_id.lower() in {
+            known.lower() for known in _power_lib_ids(schematic_file.read_text(encoding="utf-8"))
+        }:
+            return True
+    except Exception:
+        pass
+    try:
+        block = loader.extract_symbol_from_library(library, comp_type)
+    except Exception:
+        block = None
+    return bool(block) and definition_is_power(block)
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -319,35 +351,6 @@ class SchematicHandlersMixin:
             comp_type = component.get("type", "R")
             library = component.get("library", "Device")
             reference = component.get("reference", "X?")
-            # Power symbols (#524): placed without a reference, or with the
-            # "#PWR?"/"#PWR" placeholder, a power symbol gets the next unused
-            # #PWRnn in the project — every sheet and every instance path
-            # counted — instead of the literal placeholder, which KiCad
-            # refuses to load. The chosen number is the reference the
-            # placement writes and the reply reports. An explicit reference
-            # other than the placeholder is left alone, as is every
-            # non-power symbol. power:PWR_FLAG is not a net: its reference
-            # is "#FLG…", never #PWRnn.
-            if (
-                f"{library}:{comp_type}".lower().startswith("power:")
-                and comp_type.lower() != "pwr_flag"
-                and reference in (None, "", "X?", "#PWR?", "#PWR")
-            ):
-                allocated = _allocate_power_reference(Path(schematic_path))
-                if allocated is not None:
-                    reference = allocated
-            value = component.get("value", comp_type)
-            footprint = component.get("footprint", "")
-            x = component.get("x", 0)
-            y = component.get("y", 0)
-            unit = component.get("unit", 1)
-            # The TS layer puts these inside `component` alongside x/y/unit
-            # (src/tools/schematic.ts). Dropping them here silently ignored the
-            # documented angle/mirrorY arguments, so every symbol landed at 0°
-            # and callers had to follow up with rotate_schematic_component.
-            angle = component.get("angle", 0)
-            mirror_y = bool(component.get("mirrorY", False))
-
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
             # (contains sym-lib-table or a .kicad_pro file).  Schematics stored in a
@@ -361,6 +364,50 @@ class SchematicHandlersMixin:
                     break
 
             loader = DynamicSymbolLoader(project_path=derived_project_path)
+
+            # Power symbols (#524): placed without a reference, or with the
+            # placeholder, a power symbol gets the next unused number in the
+            # project — every sheet and every instance path counted — instead
+            # of the literal placeholder, which would leave several power
+            # symbols sharing one unannotated "#PWR?" reference. (KiCad loads
+            # a lone "#PWR?" fine; the duplicates are the problem.) The
+            # chosen number is the reference the placement writes and the
+            # reply reports. An explicit reference other than the placeholder
+            # is left alone, so the power check below runs only when the
+            # caller gave no usable reference. power:PWR_FLAG is a power
+            # symbol too, but its prefix is "#FLG", never "#PWR".
+            if reference in (None, "", "X?", "#PWR?", "#PWR", "#FLG?", "#FLG"):
+                if _is_power_symbol(loader, schematic_file, library, comp_type):
+                    prefix = "#FLG" if comp_type.lower() == "pwr_flag" else "#PWR"
+                    if reference in (None, "", "X?", f"{prefix}?", prefix):
+                        allocated = _allocate_power_reference(schematic_file, prefix)
+                        if allocated is not None:
+                            reference = allocated
+                elif reference in (None, "", "X?"):
+                    # The reference is optional only so power symbols can omit it
+                    # and be allocated the next free #PWRnn/#FLGnn. Every other
+                    # symbol needs one: leaving it out used to place a resistor
+                    # silently named "X?", which is not a reference at all.
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Reference is required for {library}:{comp_type}: omit it "
+                            "only for power symbols (power:GND, …), which are allocated "
+                            "the next free #PWRnn (power:PWR_FLAG: #FLGnn)."
+                        ),
+                    }
+            value = component.get("value", comp_type)
+            footprint = component.get("footprint", "")
+            x = component.get("x", 0)
+            y = component.get("y", 0)
+            unit = component.get("unit", 1)
+            # The TS layer puts these inside `component` alongside x/y/unit
+            # (src/tools/schematic.ts). Dropping them here silently ignored the
+            # documented angle/mirrorY arguments, so every symbol landed at 0°
+            # and callers had to follow up with rotate_schematic_component.
+            angle = component.get("angle", 0)
+            mirror_y = bool(component.get("mirrorY", False))
+
             loader.add_component(
                 schematic_file,
                 library,
