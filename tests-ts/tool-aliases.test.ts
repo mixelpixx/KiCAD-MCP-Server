@@ -122,6 +122,35 @@ describe("replace_component -> edit_component", () => {
     ).toEqual({ params: { reference: "C1", footprint: "Capacitor_SMD:C_0603_1608Metric" } });
   });
 
+  it.each(["", "   "])("treats a blank newFootprint %j as absent", (blank) => {
+    expect(
+      replaceComponentToEditComponent({
+        reference: "R1",
+        newComponentId: "Resistor_SMD:R_0805_2012Metric",
+        newFootprint: blank,
+      }),
+    ).toEqual({ params: { reference: "R1", footprint: "Resistor_SMD:R_0805_2012Metric" } });
+  });
+
+  it("refuses a blank newFootprint when newComponentId is not Library:Footprint", () => {
+    const r = replaceComponentToEditComponent({
+      reference: "R1",
+      newComponentId: "R_0805",
+      newFootprint: " ",
+    });
+    expect(r).toHaveProperty("error");
+  });
+
+  it.each(["", "  "])("drops a blank newValue %j instead of sending it", (blank) => {
+    expect(
+      replaceComponentToEditComponent({
+        reference: "R1",
+        newComponentId: "Resistor_SMD:R_0805_2012Metric",
+        newValue: blank,
+      }),
+    ).toEqual({ params: { reference: "R1", footprint: "Resistor_SMD:R_0805_2012Metric" } });
+  });
+
   it.each(["R_0603_1608Metric", "Device:R:extra", ":R_0603", "Resistor_SMD:", ""])(
     "refuses newComponentId %j without newFootprint",
     (id) => {

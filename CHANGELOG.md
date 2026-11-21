@@ -406,7 +406,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   footprint is `newFootprint`, or `newComponentId` when that is in
   `Library:Footprint` form, and `newValue` becomes the value. Any other
   `newComponentId` without `newFootprint` is refused with a message instead
-  of being guessed at.
+  of being guessed at. A blank `newFootprint` or `newValue` counts as absent.
 
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a

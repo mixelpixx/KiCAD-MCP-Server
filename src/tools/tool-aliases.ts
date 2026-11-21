@@ -107,11 +107,14 @@ export interface ReplaceComponentParams {
 /** replace_component -> edit_component, which already changes a placed
  * footprint and its value. The footprint is newFootprint, or else
  * newComponentId when it has the Library:Footprint form; anything else is
- * refused rather than guessed at. */
+ * refused rather than guessed at. A blank newFootprint or newValue counts as
+ * absent: clients often send "" for optional fields, and edit_component skips
+ * an empty value while still reporting success. */
 export function replaceComponentToEditComponent(
   p: ReplaceComponentParams,
 ): { params: Record<string, unknown> } | { error: string } {
-  let footprint = p.newFootprint;
+  const present = (v: string | undefined) => (v?.trim() ? v : undefined);
+  let footprint = present(p.newFootprint);
   if (footprint === undefined) {
     const parts = p.newComponentId.split(":");
     if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
@@ -125,7 +128,7 @@ export function replaceComponentToEditComponent(
     footprint = p.newComponentId;
   }
   return {
-    params: dropUndefined({ reference: p.reference, footprint, value: p.newValue }),
+    params: dropUndefined({ reference: p.reference, footprint, value: present(p.newValue) }),
   };
 }
 
