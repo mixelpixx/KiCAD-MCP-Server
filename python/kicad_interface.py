@@ -453,6 +453,9 @@ try:
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
     from commands.validate_kicad_files import validate_schematic, validate_symbol_library
+    from commands.variant_bom import export_variant_bom
+    from commands.variant_components import get_component_variant, set_component_variant
+    from commands.variant_registry import create_variant, list_variants
     from commands.via_summary import ViaSummaryCommands
 
     logger.info("Successfully imported all command handlers")
@@ -713,6 +716,12 @@ class KiCADInterface(SchematicHandlersMixin):
             "batch_add_and_connect": self.batch_commands.batch_add_and_connect,
             "update_symbol_from_library": update_symbol_from_library,
             "add_library_symbol_property": add_library_symbol_property,
+            # Assembly variants operate on the supplied files, not the loaded board.
+            "list_variants": list_variants,
+            "create_variant": create_variant,
+            "get_component_variant": get_component_variant,
+            "set_component_variant": set_component_variant,
+            "export_variant_bom": export_variant_bom,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
@@ -1476,6 +1485,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "replace_instance_lib_ids",
         "replace_schematic_component",
         "rotate_schematic_component",
+        "set_component_variant",
         "set_schematic_component_property",
         "set_schematic_property_position",
         "set_schematic_rectangle",
