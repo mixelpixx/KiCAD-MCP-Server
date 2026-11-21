@@ -173,10 +173,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   passed it, and kicad-cli refused the file with a bare
   `Failed to load schematic` and no position. `validate_schematic` now reports
   each such item as an error with its line number, and warns when a placed
-  symbol's Reference property disagrees with the reference on one of its
-  instance paths. Both checks have regression tests: the nested-symbol fixture
-  is built exactly as the maintainer reproduced it, and a stale-Reference
-  fixture covers the warning.
+  symbol's Reference property matches none of the references on the instance
+  paths its own project's hierarchy reaches for it -- only the current
+  project's `(project ...)` block counts, and only on paths the hierarchy
+  reaches, so a sheet used twice (a reference per use by design) or another
+  project's instance block no longer warns. Both checks have regression
+  tests: the nested-symbol fixture is built exactly as the maintainer
+  reproduced it, and a stale-Reference fixture covers the warning.
 
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's

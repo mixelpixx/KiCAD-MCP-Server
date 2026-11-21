@@ -13,8 +13,8 @@ a unit that escaped its parent, or one still named after the symbol it was
 renamed away from. In a schematic it also names anything nested inside
 ``(sheet_instances ...)`` -- a symbol pasted there is syntactically balanced
 but kicad-cli refuses the file with a bare ``Failed to load schematic`` -- and
-warns when a symbol's Reference property disagrees with the reference on one
-of its instance paths.
+warns when a symbol's Reference property matches none of the references on
+the instance paths its own project's hierarchy reaches for it.
 
 Paren faults that net to zero are the hard case, because nothing counts them and
 ``kicad-cli`` reports no position for them. Since KiCad writes one tab per
@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.kicad_cli import resolve_kicad_cli
+from utils.sheet_tree import instance_paths, project_name
 
 logger = logging.getLogger("kicad_interface")
 
@@ -443,17 +444,37 @@ def _check_sheet_instances(nodes: List[_Node]) -> List[Dict[str, Any]]:
 _REFERENCE_PROPERTY = re.compile(r'\(property\s+"Reference"\s+"((?:[^"\\]|\\.)*)"')
 
 
-def _check_reference_mismatch(nodes: List[_Node], content: str) -> List[Dict[str, Any]]:
-    """A placed symbol whose Reference property disagrees with an instance path.
+def _check_reference_mismatch(nodes: List[_Node], content: str, path: Path) -> List[Dict[str, Any]]:
+    """A placed symbol whose Reference property matches no reached instance path.
 
     KiCad records a placed symbol's reference per use of its sheet, in
     ``(instances (project ... (path ... (reference ...))))``. A hand edit that
     changes one side and not the other leaves the symbol annotated one way on
     the sheet and another in the project, so the stale side is reported as a
     warning: the file still loads, which is exactly what makes it easy to miss.
-    One warning per symbol, naming the first path that disagrees.
+    One warning per symbol, naming the first reached path that disagrees.
+
+    Only two sets of entries count, and both filters matter -- without them
+    the warning fires on valid KiCad data:
+
+    - the current project's ``(project ...)`` block only
+      (``project_name()``): a file can carry another project's instance data,
+      e.g. a ``(project "dupa" ...)`` block whose paths say ``#PWR?``, and
+      that project's references are not this symbol's.
+    - only the paths the hierarchy actually reaches (``instance_paths()``):
+      a sheet used more than once gives its symbols a reference per use by
+      design -- RV201 in one use, RV301 in the other -- so a property that
+      matches any reached use is fine, and only a property matching none of
+      them is stale.
+
+    A symbol with no reached entry in the current project's block is left
+    alone: its instance data is either another project's or for a use the
+    hierarchy no longer reaches, and KiCad drops such entries on save.
     """
     issues = []
+    current_project = project_name(path)
+    _root, reached_paths = instance_paths(path)
+    reached = set(reached_paths)
     children: Dict[int, List[_Node]] = {}
     for node, ancestors in zip(nodes, _ancestor_chains(nodes)):
         if ancestors:
@@ -474,43 +495,45 @@ def _check_reference_mismatch(nodes: List[_Node], content: str) -> List[Dict[str
                 break
         if property_value is None or property_node is None:
             continue
-        # First (instances (project (path (reference ...)))) entry whose
-        # reference is not the property's; the walk stops there, so a symbol
-        # used on many sheets reports one warning, not one per use.
-        mismatch = None
+        # (path, reference) entries in the current project's block, on a
+        # path the hierarchy reaches for this sheet.
+        reached_entries: List[Tuple[str, str]] = []
         for instances in children.get(id(symbol), []):
-            if mismatch is not None or instances.name != "instances":
+            if instances.name != "instances":
                 continue
             for project in children.get(id(instances), []):
-                if mismatch is not None or project.name != "project":
+                if project.name != "project":
                     continue
-                for path in children.get(id(project), []):
-                    if mismatch is not None or path.name != "path":
+                if _quoted_after(content, project) != current_project:
+                    continue
+                for path_node in children.get(id(project), []):
+                    if path_node.name != "path":
                         continue
-                    for reference in children.get(id(path), []):
+                    entry_path = _quoted_after(content, path_node) or ""
+                    if entry_path not in reached:
+                        continue
+                    for reference in children.get(id(path_node), []):
                         if reference.name != "reference":
                             continue
                         instance_value = _quoted_after(content, reference)
-                        if instance_value is None or instance_value == property_value:
-                            continue
-                        mismatch = (
-                            _quoted_after(content, path) or "",
-                            instance_value,
-                        )
-                        break
-        if mismatch is not None:
-            instance_path, instance_value = mismatch
-            issues.append(
-                _issue(
-                    "warning",
-                    "reference_mismatch",
-                    f"Symbol's Reference property is '{property_value}' but "
-                    f"its instance path '{instance_path}' carries reference "
-                    f"'{instance_value}'; one side is stale",
-                    property_node.line,
-                    property_node.column,
-                )
+                        if instance_value is not None:
+                            reached_entries.append((entry_path, instance_value))
+        if not reached_entries:
+            continue
+        if any(instance_value == property_value for _, instance_value in reached_entries):
+            continue
+        instance_path, instance_value = reached_entries[0]
+        issues.append(
+            _issue(
+                "warning",
+                "reference_mismatch",
+                f"Symbol's Reference property is '{property_value}' but "
+                f"its instance path '{instance_path}' carries reference "
+                f"'{instance_value}'; one side is stale",
+                property_node.line,
+                property_node.column,
             )
+        )
     return issues
 
 
@@ -773,7 +796,7 @@ def validate_schematic(params: Dict[str, Any]) -> Dict[str, Any]:
 
     issues.extend(_check_orphan_fragments(nodes, "kicad_sch"))
     issues.extend(_check_sheet_instances(nodes))
-    issues.extend(_check_reference_mismatch(nodes, content))
+    issues.extend(_check_reference_mismatch(nodes, content, path))
 
     instances = [
         n for n in nodes if n.name == "symbol" and n.depth == 1 and n.parent == "kicad_sch"

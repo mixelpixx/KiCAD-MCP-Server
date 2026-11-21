@@ -64,6 +64,20 @@ GOOD_SCH = """(kicad_sch
 """
 
 
+# GOOD_SCH as a root sheet: a top-level (uuid ...) of its own. A placed
+# symbol's instance path is the path of its sheet's use in the hierarchy,
+# which for a root sheet is "/<root uuid>" -- so the reference fixtures
+# below use that path, and are written as test_project.kicad_sch next to a
+# test_project.kicad_pro, so project_name() / instance_paths() resolve
+# exactly as they do on a real project.
+ROOT_UUID = "99999999-8888-7777-6666-555555555555"
+SCH_ROOTED = GOOD_SCH.replace(
+    '\t(paper "A4")',
+    f'\t(paper "A4")\n\t(uuid "{ROOT_UUID}")',
+    1,
+)
+
+
 # GOOD_SCH with the (sheet_instances ...) block a real schematic carries:
 # one (path ...) per use of the sheet, each with a (page ...).
 GOOD_SCH_INSTANCES = GOOD_SCH.replace(
@@ -112,10 +126,11 @@ POWER_SYMBOL = """\t(symbol
 \t\t)
 \t)"""
 
-# GOOD_SCH's placed symbol, given a Reference property and an (instances ...)
+# SCH_ROOTED's placed symbol, given a Reference property and an (instances ...)
 # block whose reference disagrees with it: the property says C9, the use of
-# the sheet says C10.
-SCH_STALE_REFERENCE = GOOD_SCH.replace(
+# the sheet says C10. The path is the root sheet's own instance path
+# ("/<root uuid>"), and the block is the current project's ("test_project").
+SCH_STALE_REFERENCE = SCH_ROOTED.replace(
     '\t\t(uuid "11111111-2222-3333-4444-555555555555")\n\t)',
     '\t\t(uuid "11111111-2222-3333-4444-555555555555")\n'
     '\t\t(property "Reference" "C9"\n'
@@ -124,7 +139,7 @@ SCH_STALE_REFERENCE = GOOD_SCH.replace(
     "\t\t)\n"
     "\t\t(instances\n"
     '\t\t\t(project "test_project"\n'
-    '\t\t\t\t(path "/11111111-2222-3333-4444-555555555555"\n'
+    f'\t\t\t\t(path "/{ROOT_UUID}"\n'
     '\t\t\t\t\t(reference "C10")\n'
     "\t\t\t\t\t(unit 1)\n"
     "\t\t\t\t)\n"
@@ -174,6 +189,17 @@ def write(tmp_path, name, text):
     p = tmp_path / name
     p.write_text(text, encoding="utf-8")
     return str(p)
+
+
+def write_project(tmp_path, name, text):
+    """Write *text* as <name>.kicad_sch next to a <name>.kicad_pro.
+
+    The reference-mismatch check reads the current project name and the
+    hierarchy's reached paths from the files on disk, so its fixtures need
+    a real project file beside them, not just the schematic.
+    """
+    (tmp_path / f"{name}.kicad_pro").write_text("{}", encoding="utf-8")
+    return write(tmp_path, f"{name}.kicad_sch", text)
 
 
 def check_lib(path, **kw):
@@ -408,8 +434,10 @@ def test_sheet_instances_block_is_clean(tmp_path):
 def test_symbol_nested_in_sheet_instances_is_an_error(tmp_path):
     """#524: the maintainer's reproduction -- a copy of a power:+5V symbol
     hand-edited into the (sheet_instances ...) block of a valid schematic.
-    kicad-cli refuses the file with a bare 'Failed to load schematic'; the
-    check names the item and its line instead."""
+    Runs with runKicadCli=False (no KiCad on this machine); the fixture was
+    checked against kicad-cli by hand -- the maintainer confirmed it refuses
+    this construction with a bare 'Failed to load schematic'. The check
+    names the item and its line instead."""
     nested = "\n".join("\t" + line for line in POWER_SYMBOL.split("\n"))
     broken = GOOD_SCH_INSTANCES.replace("\t)\n)\n", nested + "\n\t)\n)\n", 1)
     assert broken.split("\n")[21] == "\t\t(symbol", "premise: nested symbol is on line 22"
@@ -422,21 +450,126 @@ def test_symbol_nested_in_sheet_instances_is_an_error(tmp_path):
 
 
 def test_stale_reference_is_a_warning(tmp_path):
-    """#524: the Reference property says C9 while the instance path says C10."""
-    r = check_sch(write(tmp_path, "s.kicad_sch", SCH_STALE_REFERENCE))
+    """#524: the Reference property says C9 while the instance path says C10.
+
+    The stale side is the current project's, on a path the hierarchy
+    reaches, so the narrowed rule still warns."""
+    r = check_sch(write_project(tmp_path, "test_project", SCH_STALE_REFERENCE))
     assert r["valid"], r["issues"]
     assert codes(r) == ["reference_mismatch"], r["issues"]
     assert r["warningCount"] == 1
     warning = r["issues"][0]
     assert warning["severity"] == "warning"
-    assert warning["line"] == 17, "the stale Reference property's line"
+    assert warning["line"] == 18, "the stale Reference property's line (17 + the root uuid line)"
     assert "'C9'" in warning["message"] and "'C10'" in warning["message"]
 
 
 def test_matching_instance_reference_stays_clean(tmp_path):
     """The same symbol with its instance reference agreeing with the property."""
     matching = SCH_STALE_REFERENCE.replace('(reference "C10")', '(reference "C9")', 1)
-    r = check_sch(write(tmp_path, "m.kicad_sch", matching))
+    r = check_sch(write_project(tmp_path, "test_project", matching))
+    assert r["valid"], r["issues"]
+    assert r["issues"] == []
+
+
+def _sheet_block(block_uuid, file_name):
+    """One (sheet ...) block placing *file_name*, as KiCad writes it."""
+    return (
+        "\t(sheet\n\t\t(at 50 50)\n\t\t(size 30 20)\n"
+        f'\t\t(uuid "{block_uuid}")\n'
+        '\t\t(property "Sheetname" "Amp"\n\t\t\t(at 50 49 0)\n\t\t)\n'
+        f'\t\t(property "Sheetfile" "{file_name}"\n\t\t\t(at 50 71 0)\n\t\t)\n'
+        "\t)\n"
+    )
+
+
+def test_sheet_used_twice_with_different_references_stays_clean(tmp_path):
+    """#524 review: a sheet used twice gives a symbol a reference per use.
+
+    KiCad's complex_hierarchy demo places ampli_ht.kicad_sch twice, and its
+    potentiometer is RV201 in one use and RV301 in the other -- correct KiCad
+    data, not a stale property. The property matches one reached use, so no
+    warning, even though it disagrees with the other use."""
+    root_uuid = "aaaaaaaa-0000-0000-0000-000000000001"
+    block_a = "a1a10000-0000-0000-0000-00000000000a"
+    block_b = "b2b20000-0000-0000-0000-00000000000b"
+    mid_uuid = "bbbb0000-0000-0000-0000-000000000002"
+    root = SCH_ROOTED.replace(f'(uuid "{ROOT_UUID}")', f'(uuid "{root_uuid}")', 1)
+    root = root.replace(
+        "\n)\n",
+        "\n"
+        + _sheet_block(block_a, "amp.kicad_sch")
+        + _sheet_block(block_b, "amp.kicad_sch")
+        + ")\n",
+        1,
+    )
+    (tmp_path / "design.kicad_pro").write_text("{}", encoding="utf-8")
+    write(tmp_path, "design.kicad_sch", root)
+    amp = SCH_STALE_REFERENCE.replace(f'(uuid "{ROOT_UUID}")', f'(uuid "{mid_uuid}")', 1)
+    amp = amp.replace('(property "Reference" "C9"', '(property "Reference" "RV201"', 1)
+    amp = amp.replace(
+        '\t\t\t(project "test_project"\n'
+        f'\t\t\t\t(path "/{ROOT_UUID}"\n'
+        '\t\t\t\t\t(reference "C10")\n'
+        "\t\t\t\t\t(unit 1)\n"
+        "\t\t\t\t)\n"
+        "\t\t\t)\n",
+        '\t\t\t(project "design"\n'
+        f'\t\t\t\t(path "/{root_uuid}/{block_a}"\n'
+        '\t\t\t\t\t(reference "RV201")\n'
+        "\t\t\t\t\t(unit 1)\n"
+        "\t\t\t\t)\n"
+        f'\t\t\t\t(path "/{root_uuid}/{block_b}"\n'
+        '\t\t\t\t\t(reference "RV301")\n'
+        "\t\t\t\t\t(unit 1)\n"
+        "\t\t\t\t)\n"
+        "\t\t\t)\n",
+        1,
+    )
+    r = check_sch(write(tmp_path, "amp.kicad_sch", amp))
+    assert r["valid"], r["issues"]
+    assert "reference_mismatch" not in codes(r), r["issues"]
+    assert r["issues"] == []
+
+
+def test_other_project_instance_block_is_ignored(tmp_path):
+    """#524 review: instance data filed under another project's name is not
+    this symbol's. A file can still carry a (project "dupa" ...) block whose
+    paths say #PWR? -- KiCad ignores it, and so must the check.
+
+    Two cases: a stale reference that appears only in the other project's
+    block, beside a matching entry in the current project's block; and a
+    symbol whose only instance block is the other project's."""
+    # Current project's entry agrees (C9); the other project's says C10.
+    other_block = (
+        '\t\t\t(project "dupa"\n'
+        '\t\t\t\t(path "/deadbeef-0000-0000-0000-000000000000"\n'
+        '\t\t\t\t\t(reference "C10")\n'
+        "\t\t\t\t\t(unit 1)\n"
+        "\t\t\t\t)\n"
+        "\t\t\t)\n"
+    )
+    with_other = SCH_STALE_REFERENCE.replace('(reference "C10")', '(reference "C9")', 1).replace(
+        "\t\t\t)\n\t\t)\n",
+        "\t\t\t)\n" + other_block + "\t\t)\n",
+        1,
+    )
+    r = check_sch(write_project(tmp_path, "test_project", with_other))
+    assert r["valid"], r["issues"]
+    assert r["issues"] == []
+
+    # Only the other project's block, and it disagrees -- still no warning.
+    only_other = SCH_STALE_REFERENCE.replace(
+        '\t\t\t(project "test_project"\n'
+        f'\t\t\t\t(path "/{ROOT_UUID}"\n'
+        '\t\t\t\t\t(reference "C10")\n'
+        "\t\t\t\t\t(unit 1)\n"
+        "\t\t\t\t)\n"
+        "\t\t\t)\n",
+        other_block,
+        1,
+    )
+    r = check_sch(write_project(tmp_path, "test_project", only_other))
     assert r["valid"], r["issues"]
     assert r["issues"] == []
 
