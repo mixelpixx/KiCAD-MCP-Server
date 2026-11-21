@@ -167,6 +167,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **IPC tools that rewrite a footprint warn that KiCad drops data from it**
+  (#569). `move_component`, `rotate_component`, `set_footprint_type` and
+  `add_component_3d_model` send each footprint back to KiCad with
+  `UpdateItems`, and KiCad rebuilds it from the message, losing what the
+  message does not carry: the `(units ...)` map before KiCad 10.0.8
+  (kicad#25859), pad fabrication properties such as a heatsink pad, and the
+  stroke type `default`, which becomes `solid` (kicad#26112). The next save
+  wrote the loss to the file with no sign of it. The loss happens inside
+  KiCad, so the server cannot restore it; these replies now carry a
+  `warnings` entry naming the rewritten footprints and what can be lost, and
+  name the units map only on the KiCad versions that drop it. The version is
+  read from the running KiCad: the IPC backend's reported version is the one
+  kicad-python was built against.
+
 - **Windows: files keep LF line endings, `KICAD_CONFIG_HOME` is the only
   config root when set, the board file keeps its on-disk name, and no child
   process gets the server's stdin.** Found on Windows 11 / KiCad 10.0.1 by

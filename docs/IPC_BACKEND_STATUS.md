@@ -227,7 +227,19 @@ Run the test script to verify IPC functionality:
 6. **SWIG-pinned sessions stay SWIG**: after `create_project`/`open_project`
    runs on SWIG, the session does not switch to IPC mid-project (see Session
    Pinning above) — reopen the project while it is open in the GUI to use IPC
-7. **Some operations may not work as expected**: This is experimental code
+7. **Footprint updates lose data inside KiCad** (#569): `move_component`,
+   `rotate_component`, `set_footprint_type` and `add_component_3d_model` send
+   each footprint back with `UpdateItems`, and KiCad rebuilds it from that
+   message. It drops what the message does not carry: the `(units ...)`
+   pad-to-unit map before KiCad 10.0.8
+   ([kicad#25859](https://gitlab.com/kicad/code/kicad/-/issues/25859)), and
+   pad fabrication properties such as a heatsink pad and the graphic stroke
+   type `default`, which becomes `solid`
+   ([kicad#26112](https://gitlab.com/kicad/code/kicad/-/issues/26112)). The
+   next save writes the loss to the file. These tools' replies carry a
+   `warnings` entry naming the footprints they rewrote; to keep everything,
+   make the change with the board closed in KiCad so the file backend edits it.
+8. **Some operations may not work as expected**: This is experimental code
 
 ## Troubleshooting
 

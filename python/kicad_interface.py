@@ -900,6 +900,15 @@ class KiCADInterface(SchematicHandlersMixin):
         "save_project": "_ipc_save_project",
     }
 
+    # IPC handlers that rewrite whole footprints with UpdateItems, which loses
+    # footprint data inside KiCad (#569). Their replies carry a warning.
+    IPC_FOOTPRINT_UPDATE_COMMANDS = {
+        "move_component",
+        "rotate_component",
+        "set_footprint_type",
+        "add_component_3d_model",
+    }
+
     # Commands that are implemented by the explicit IPC command handlers in
     # command_routes, rather than by the generic IPC_CAPABLE_COMMANDS fast path.
     IPC_DIRECT_COMMANDS = {
@@ -922,6 +931,31 @@ class KiCADInterface(SchematicHandlersMixin):
         "get_board_info",
         "get_component_properties",
     }
+
+    def _warn_footprint_update_loss(
+        self, command: str, params: Dict[str, Any], result: Dict[str, Any]
+    ) -> None:
+        """Add the #569 warning to a successful IPC reply that rewrote footprints."""
+        if command not in self.IPC_FOOTPRINT_UPDATE_COMMANDS or not result.get("success"):
+            return
+        from kicad_api.ipc_backend import footprint_update_loss_warning
+
+        if command == "add_component_3d_model":
+            references = [
+                str(d.get("reference", ""))
+                for d in result.get("details") or []
+                if isinstance(d, dict) and d.get("added")
+            ]
+        else:
+            reference = params.get("reference", params.get("componentId", ""))
+            references = [str(reference)] if reference else []
+        backend = getattr(self, "ipc_backend", None)
+        version = None
+        if backend is not None and hasattr(backend, "running_kicad_version"):
+            version = backend.running_kicad_version()
+        warning = footprint_update_loss_warning(version, references)
+        if warning:
+            result.setdefault("warnings", []).append(warning)
 
     @staticmethod
     def _normalize_board_path(path: Any) -> Optional[str]:
@@ -1197,6 +1231,7 @@ class KiCADInterface(SchematicHandlersMixin):
                             else:
                                 result["_backend"] = "ipc"
                                 result["_realtime"] = True
+                                self._warn_footprint_update_loss(command, params, result)
 
                         logger.debug(f"IPC command result: {result}")
                         return result
