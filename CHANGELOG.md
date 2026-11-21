@@ -430,6 +430,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   and KiCad has no per-component annotation it could map to. Text on the
   board is `add_board_text`. The tool count is now 256.
 
+- **`edit_component` is auto-saved like other board edits.** It was missing
+  from `_BOARD_MUTATING_COMMANDS`, so a footprint swap or value change (also
+  through `replace_component`) reported success but reached the board file
+  only on an explicit `save_project`, unlike `place_component` or
+  `delete_component`.
+
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,
   the JSON-RPC schema declares `library` and `footprint`, and the handler
