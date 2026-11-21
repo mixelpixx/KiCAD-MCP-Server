@@ -94,6 +94,7 @@ def test_minimal_fixture_exports_pdf(tmp_path: Path) -> None:
         [str(_KICAD_CLI), "sch", "export", "pdf", "--output", str(pdf), str(sch)],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, result.stderr
     assert pdf.exists()

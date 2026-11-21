@@ -167,6 +167,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -179,6 +180,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", str(out_path)],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -490,7 +492,7 @@ class SchematicHandlersMixin:
                     trim_start -= 1
                 content = content[:trim_start] + content[b_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             deleted_count = len(blocks_to_delete)
@@ -653,7 +655,7 @@ class SchematicHandlersMixin:
             if doomed_indices:
                 for i in reversed(doomed_indices):
                     del sch_data[i]
-                with open(sch_file, "w", encoding="utf-8") as f:
+                with open(sch_file, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
                 logger.info(
                     "Deleted %d dangling label(s) at removed pin positions",
@@ -950,7 +952,7 @@ class SchematicHandlersMixin:
 
             content = content[:block_start] + block_text + content[block_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             changes: Dict[str, Any] = {
@@ -1384,7 +1386,9 @@ class SchematicHandlersMixin:
             if params.get("blackAndWhite"):
                 cmd.insert(-1, "--black-and-white")
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode == 0:
                 return {"success": True, "file": {"path": output_path}}
@@ -1639,7 +1643,9 @@ class SchematicHandlersMixin:
                     "--no-background-color",
                     schematic_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -2134,7 +2140,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2233,7 +2239,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2480,7 +2486,7 @@ class SchematicHandlersMixin:
                 rotation = at_entry[3] if len(at_entry) > 3 else 0
                 item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
 
-                with open(schematic_path, "w", encoding="utf-8") as f:
+                with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
 
                 return {
@@ -2543,7 +2549,9 @@ class SchematicHandlersMixin:
                 if params.get("blackAndWhite"):
                     cmd.append("--black-and-white")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -2852,7 +2860,7 @@ class SchematicHandlersMixin:
                     "message": f"Sheet '{sheet_name}' not found in {schematic_path}",
                 }
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(modified)
 
             return {
@@ -2892,7 +2900,9 @@ class SchematicHandlersMixin:
                     "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
                 }
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", newline="", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
@@ -2908,7 +2918,9 @@ class SchematicHandlersMixin:
                 ]
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL
+                )
 
                 # kicad-cli returns non-zero when ERC violations are found —
                 # this is normal, not an error.  Only fail when no JSON was
@@ -3531,7 +3543,9 @@ class SchematicHandlersMixin:
                 tmp_path,
                 schematic_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
             if result.returncode != 0:
                 logger.warning(
                     f"kicad-cli netlist export failed (exit {result.returncode}): "
@@ -4188,7 +4202,9 @@ class SchematicHandlersMixin:
                     tmp_dir,
                     schematic_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {

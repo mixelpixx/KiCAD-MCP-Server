@@ -44,6 +44,7 @@ def test_rotate_mirror_then_compute_pin_positions_no_state_leak():
         # the plugin is not a declared dependency of this repo, and passing
         # --timeout to a pytest without it is a usage error (exit code 4).
         timeout=90,
+        stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, (
         "Collecting test_rotate_schematic_mirror.py before "

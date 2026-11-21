@@ -167,6 +167,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Windows: files keep LF line endings, `KICAD_CONFIG_HOME` is the only
+  config root when set, the board file keeps its on-disk name, and no child
+  process gets the server's stdin.** Found on Windows 11 / KiCad 10.0.1 by
+  Tristan Lewis.
+  - Text-mode writes (`open`, `os.fdopen`, `NamedTemporaryFile`) pass
+    `newline=""`, so an edit no longer turns a whole `.kicad_sch`,
+    `.kicad_dru` or `.kicad_pro` into CRLF. `tests/test_lf_writes.py` scans
+    the source for all three forms.
+  - Every `subprocess` call under `python/` passes `stdin=subprocess.DEVNULL`.
+    The Python half reads its JSON-RPC commands on stdin, so a child that
+    inherits it can read the server's input, and on Windows it fails with
+    WinError 6 (netlist export, DRC, via audit, the Eagle import check).
+    `tests/test_subprocess_stdin.py` keeps it that way.
+  - Tests that use `kicad-cli` as an oracle find it the way the server does
+    (PATH, then the install directories) and warn when it is missing, instead
+    of skipping silently.
+
 - **`delete_schematic_wire` says why a delete missed** (#521). A delete removes
   one wire segment whose stored end points are both within 0.5 mm of `start`
   and `end`; a run that KiCad split at a junction or a T is not matched as a

@@ -198,7 +198,9 @@ class TestCliBackedToolEndToEnd:
         kc.reset_cache()
         cli = kc.resolve_kicad_cli(force=True)
         assert cli is not None
-        out = subprocess.run([cli, "version"], capture_output=True, text=True)
+        out = subprocess.run(
+            [cli, "version"], capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
         assert out.returncode == 0
         # e.g. "10.0.4" — a bare major.minor.patch line.
         assert out.stdout.strip()[0].isdigit()

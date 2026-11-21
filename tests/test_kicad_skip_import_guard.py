@@ -48,6 +48,7 @@ def _run(body: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         timeout=30,
+        stdin=subprocess.DEVNULL,
     )
 
 

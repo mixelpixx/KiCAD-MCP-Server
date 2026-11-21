@@ -202,7 +202,7 @@ def snap_to_grid(
                 already_on_grid += 1
             continue
 
-    with open(schematic_path, "w", encoding="utf-8") as fh:
+    with open(schematic_path, "w", encoding="utf-8", newline="") as fh:
         fh.write(kicad_dumps(sch_data))
 
     return {

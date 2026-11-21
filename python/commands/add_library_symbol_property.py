@@ -129,7 +129,7 @@ def add_library_symbol_property(params: dict[str, Any]) -> dict[str, Any]:
             ),
         }
 
-    schematic_path.write_text(updated, encoding="utf-8")
+    schematic_path.write_bytes(updated.encode("utf-8"))
 
     return {
         "success": True,

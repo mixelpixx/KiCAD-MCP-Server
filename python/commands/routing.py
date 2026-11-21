@@ -217,7 +217,7 @@ def persist_netclass_to_project(
         directory = os.path.dirname(pro_path) or "."
         fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netclass-", suffix=".kicad_pro")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                 json.dump(data, handle, indent=2, sort_keys=True)
                 handle.write("\n")
             os.replace(tmp_path, pro_path)
@@ -471,7 +471,7 @@ def persist_net_assignments_to_project(
         directory = os.path.dirname(pro_path) or "."
         fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netassign-", suffix=".kicad_pro")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                 json.dump(data, handle, indent=2, sort_keys=True)
                 handle.write("\n")
             os.replace(tmp_path, pro_path)
@@ -564,7 +564,7 @@ def persist_net_color_to_project(
         directory = os.path.dirname(pro_path) or "."
         fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netcolor-", suffix=".kicad_pro")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                 json.dump(data, handle, indent=2, sort_keys=True)
                 handle.write("\n")
             os.replace(tmp_path, pro_path)

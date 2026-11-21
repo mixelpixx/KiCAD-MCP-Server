@@ -565,7 +565,7 @@ class WireManager:
             if wires or drop:
                 WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
             logger.info(
                 f"Added {len(labels)} label(s) and {len(wires)} wire(s) to {schematic_path.name}"

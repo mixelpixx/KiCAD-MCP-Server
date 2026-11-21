@@ -235,7 +235,7 @@ class SchematicManager:
             # and produce minimal, reviewable diffs.
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            with open(file_path, "w", encoding="utf-8") as f:
+            with open(file_path, "w", encoding="utf-8", newline="") as f:
                 f.write(prettify(content))
             logger.info(f"Saved schematic to: {file_path}")
             return True

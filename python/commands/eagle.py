@@ -1827,6 +1827,7 @@ class EagleCommands:
                 capture_output=True,
                 text=True,
                 timeout=120,
+                stdin=subprocess.DEVNULL,
             )
             if result.returncode != 0 or not os.path.exists(report_path):
                 return None
@@ -1863,6 +1864,7 @@ class EagleCommands:
                 capture_output=True,
                 text=True,
                 timeout=60,
+                stdin=subprocess.DEVNULL,
             )
             if result.returncode == 0 and os.path.exists(pcb_out):
                 return True, "PCB imported successfully"

@@ -160,7 +160,7 @@ def test_audit_against_a_git_revision(tmp_path):
         ["add", "."],
         ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "good"],
     ):
-        subprocess.run(["git", "-C", str(repo), *args], check=True)
+        subprocess.run(["git", "-C", str(repo), *args], check=True, stdin=subprocess.DEVNULL)
     _change_net(board, uuids[2], "GND")
 
     r = _audit({"boardPath": str(board), "reference": "HEAD"})
@@ -200,7 +200,12 @@ def _tiny_repo(tmp_path):
         ["add", "."],
         ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "good"],
     ):
-        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), *args],
+            check=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+        )
     return board
 
 
