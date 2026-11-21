@@ -454,6 +454,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   for `*` and got the first 20 footprints, whatever it asked for. `pattern`
   still takes precedence, then `query`, then `search_term`.
 
+- **`replace_component` works: it is now an alias of `edit_component`**
+  (#407). The tool was registered but no Python command answered it, so every
+  call failed with "unknown command". It now sends `edit_component`: the
+  footprint is `newFootprint`, or `newComponentId` when that is in
+  `Library:Footprint` form, and `newValue` becomes the value. Any other
+  `newComponentId` without `newFootprint` is refused with a message instead
+  of being guessed at. A blank `newFootprint` or `newValue` counts as absent.
+
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a
   pattern that stopped at the first `)`, the one closing `(at x y angle)`, so
