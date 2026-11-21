@@ -227,7 +227,7 @@ class SchematicFieldLayoutCommands:
             new_block, old_pos, info = moved
 
             new_content = content[:block_start] + new_block + content[block_end + 1 :]
-            sch_path.write_text(new_content, encoding="utf-8")
+            sch_path.write_bytes(new_content.encode("utf-8"))
 
             old_str = (
                 f"({old_pos['x']}, {old_pos['y']}, {old_pos['angle']}°)" if old_pos else "unknown"
@@ -342,7 +342,7 @@ class SchematicFieldLayoutCommands:
                 )
 
             if applied:
-                sch_path.write_text(content, encoding="utf-8")
+                sch_path.write_bytes(content.encode("utf-8"))
 
             return {
                 "success": len(failed) == 0,

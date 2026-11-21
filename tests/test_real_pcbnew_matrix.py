@@ -231,6 +231,7 @@ def _drc_clearance_violations(cli: str, board, board_path: Path) -> list:
         [cli, "pcb", "drc", "--format", "json", "-o", str(report), str(board_path)],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     return [v for v in json.loads(report.read_text())["violations"] if v["type"] == "clearance"]
 

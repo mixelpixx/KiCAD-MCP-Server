@@ -267,6 +267,7 @@ def test_kicad_keeps_a_sub_sheet_with_a_multi_line_property(tmp_path: Path) -> N
             [cli, "sch", "export", "netlist", "--format", "kicadxml", "-o", str(out), str(root)],
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         )
         assert run.returncode == 0, run.stdout + run.stderr
         return out.read_text(encoding="utf-8").count("<comp ")

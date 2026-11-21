@@ -138,7 +138,7 @@ class SchematicHierarchyCommands:
                     # line start so (sheet_instances keeps its own indentation.
                     content = content[:line_start] + sheet_block + content[line_start:]
 
-            parent_file.write_text(content, encoding="utf-8")
+            parent_file.write_bytes(content.encode("utf-8"))
 
             # Ensure each sub-sheet component has the hierarchical instance entry.
             self.fix_subsheet_instances(str(parent_file), content)
@@ -252,7 +252,7 @@ class SchematicHierarchyCommands:
                 )
                 removed_instance = removed_instance or n > 0
 
-            parent_file.write_text(new_content, encoding="utf-8")
+            parent_file.write_bytes(new_content.encode("utf-8"))
 
             return {
                 "success": True,
@@ -452,7 +452,7 @@ class SchematicHierarchyCommands:
                 )
                 created = True
 
-            parent_file.write_text(content[:start] + new_block + content[end:], encoding="utf-8")
+            parent_file.write_bytes((content[:start] + new_block + content[end:]).encode("utf-8"))
             return {
                 "success": True,
                 "key": key,

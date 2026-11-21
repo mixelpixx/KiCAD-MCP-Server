@@ -94,7 +94,7 @@ def write_project_json_atomic(path: str, data: Dict[str, Any]) -> None:
     directory = os.path.dirname(path) or "."
     fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".prosettings-", suffix=".kicad_pro")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             # No sort_keys: #220 made the .kicad_pro byte-faithful to KiCad's
             # own output, and alphabetising every key would undo that on the
             # first restore. json.load preserves insertion order, and

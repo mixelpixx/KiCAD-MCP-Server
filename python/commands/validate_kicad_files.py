@@ -383,6 +383,7 @@ def _cli_check(subcommand: str, work_dir: Path, target: Path) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=_CLI_TIMEOUT_SEC,
+            stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
         return {"ran": False, "reason": f"kicad-cli timed out after {_CLI_TIMEOUT_SEC}s"}
