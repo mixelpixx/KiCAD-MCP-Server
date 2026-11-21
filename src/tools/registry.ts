@@ -74,7 +74,6 @@ export const toolCategories: ToolCategory[] = [
       "check_courtyard_overlaps",
       "suggest_placement",
       "move_footprint_text",
-      "add_component_annotation",
       "group_components",
       "replace_component",
       "hierarchical_place",

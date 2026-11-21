@@ -403,6 +403,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
 
+- **`add_component_annotation` is removed** (#407). It was registered but no
+  Python command answered it, so every call failed with "unknown command",
+  and KiCad has no per-component annotation it could map to. Text on the
+  board is `add_board_text`. The tool count is now 256.
+
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,
   the JSON-RPC schema declares `library` and `footprint`, and the handler

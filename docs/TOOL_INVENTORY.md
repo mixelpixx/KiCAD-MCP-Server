@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.9.0
-**Tools registered on the server:** 262
-**Tools indexed for keyword discovery:** 262 in 21 categories
-**Last updated:** 2026-11-18
+**Tools registered on the server:** 261
+**Tools indexed for keyword discovery:** 261 in 21 categories
+**Last updated:** 2026-11-21
 
 ## How to read this document
 
@@ -83,7 +83,7 @@ _Source: `src/tools/board.ts`_
 
 ---
 
-## Component Management (28 tools)
+## Component Management (27 tools)
 
 _Source: `src/tools/component.ts`_
 
@@ -98,7 +98,6 @@ _Source: `src/tools/component.ts`_
 | `set_footprint_type`        | Set the placement type (through_hole / smd / unspecified) and optional exclusion flags on a placed PCB footprint.                           | `component` |
 | `find_component`            | Search components by reference or value                                                                                                     | `component` |
 | `get_component_properties`  | Get all properties of a component                                                                                                           | `component` |
-| `add_component_annotation`  | Add annotation/comment to component                                                                                                         | `component` |
 | `group_components`          | Group multiple components together                                                                                                          | `component` |
 | `replace_component`         | Replace component with different footprint                                                                                                  | `component` |
 | `get_component_pads`        | Get all pad information for a component                                                                                                     | `component` |
@@ -542,7 +541,7 @@ _Source: `src/tools/toolboxes.ts`_
 | ------------------------ | -------------------------------------- | ------- |
 | `project.ts`             | Project and Board Files                | 12      |
 | `board.ts`               | Board Management                       | 22      |
-| `component.ts`           | Component Management                   | 28      |
+| `component.ts`           | Component Management                   | 27      |
 | `routing.ts`             | Routing                                | 19      |
 | `design-rules.ts`        | Design Rules and DRC                   | 9       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
@@ -567,16 +566,16 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **262** |
+| **Total**                |                                        | **261** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 262 of the 262 registered tools.
+These are the categories `search_tools` searches. They cover 261 of the 261 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
 | `board`                    | 18            |
-| `component`                | 24            |
+| `component`                | 23            |
 | `export`                   | 27            |
 | `drc`                      | 10            |
 | `schematic`                | 38            |
@@ -596,6 +595,6 @@ These are the categories `search_tools` searches. They cover 262 of the 262 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **262**       |
+| **Indexed total**          | **261**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **262**       |
+| **Registered total**       | **261**       |

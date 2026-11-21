@@ -370,7 +370,6 @@ _NOT_SCHEMATIC_WRITERS = {
             "set_stackup_layer",
             "update_graphic",
             # component.ts
-            "add_component_annotation",
             "align_components",
             "batch_move_components",
             "delete_component",
