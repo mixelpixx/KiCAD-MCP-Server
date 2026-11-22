@@ -430,6 +430,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   and KiCad has no per-component annotation it could map to. Text on the
   board is `add_board_text`. The tool count is now 256.
 
+- **`edit_component` is auto-saved like other board edits.** It was missing
+  from `_BOARD_MUTATING_COMMANDS`, so a footprint swap or value change (also
+  through `replace_component`) reported success but reached the board file
+  only on an explicit `save_project`, unlike `place_component` or
+  `delete_component`.
+
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,
   the JSON-RPC schema declares `library` and `footprint`, and the handler
@@ -461,6 +467,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `search_term`, so a JSON-RPC client that sent the required `query` searched
   for `*` and got the first 20 footprints, whatever it asked for. `pattern`
   still takes precedence, then `query`, then `search_term`.
+
+- **`replace_component` works: it is now an alias of `edit_component`**
+  (#407). The tool was registered but no Python command answered it, so every
+  call failed with "unknown command". It now sends `edit_component`: the
+  footprint is `newFootprint`, or `newComponentId` when that is in
+  `Library:Footprint` form, and `newValue` becomes the value. Any other
+  `newComponentId` without `newFootprint` is refused with a message instead
+  of being guessed at. A blank `newFootprint` or `newValue` counts as absent.
 
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a
