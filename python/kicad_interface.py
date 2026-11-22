@@ -1452,6 +1452,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "move_component",
         "rotate_component",
         "delete_component",
+        "edit_component",
         "route_trace",
         "route_arc_trace",
         "route_pad_to_pad",
