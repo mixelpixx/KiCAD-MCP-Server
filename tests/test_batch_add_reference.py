@@ -65,7 +65,7 @@ def _references(text: str) -> List[str]:
 
 def test_power_symbols_in_one_batch_get_distinct_numbers(tmp_path: Path) -> None:
     sch = tmp_path / "power.kicad_sch"
-    sch.write_text(_POWER_SCH, encoding="utf-8", newline="")
+    sch.write_bytes(_POWER_SCH.encode("utf-8"))
 
     result = _commands().batch_add_components(
         {
@@ -88,7 +88,7 @@ def test_power_symbols_in_one_batch_get_distinct_numbers(tmp_path: Path) -> None
 
 def test_an_explicit_power_reference_is_kept(tmp_path: Path) -> None:
     sch = tmp_path / "power.kicad_sch"
-    sch.write_text(_POWER_SCH, encoding="utf-8", newline="")
+    sch.write_bytes(_POWER_SCH.encode("utf-8"))
 
     result = _commands().batch_add_components(
         {
