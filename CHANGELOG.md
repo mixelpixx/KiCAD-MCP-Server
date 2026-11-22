@@ -167,6 +167,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_schematic_component` auto-picks the next free `#PWR` reference for power symbols (#524).**
+  Placing a power symbol (`power:GND`, …) without a reference, or with the
+  `#PWR?` placeholder, wrote the literal placeholder into the schematic,
+  so every power symbol placed that way ended up with the same unannotated
+  reference `#PWR?` — cloning a power symbol by hand was the only
+  workaround. (A lone `#PWR?` loads in KiCad; the duplicate references are
+  the problem.) The tool now allocates the next unused `#PWRnn` in the
+  project, counting every sheet and every instance path, writes it on the
+  Reference property and every instance entry, and reports it as
+  `component_reference`. `power:PWR_FLAG` gets the next free `#FLGnn`
+  instead. A non-power symbol placed without a reference is now an error:
+  the optional reference exists only so power symbols can omit it. An
+  explicit reference other than the placeholder behaves exactly as before.
+
 - **IPC tools that rewrite a footprint warn that KiCad drops data from it**
   (#569). `move_component`, `rotate_component`, `set_footprint_type` and
   `add_component_3d_model` send each footprint back to KiCad with
