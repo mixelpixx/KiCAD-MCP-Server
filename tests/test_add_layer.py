@@ -252,6 +252,7 @@ def test_inner_layers_actually_reach_the_file():
             capture_output=True,
             text=True,
             timeout=120,
+            stdin=subprocess.DEVNULL,
         )
     finally:
         os.unlink(script)

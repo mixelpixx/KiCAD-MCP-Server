@@ -83,6 +83,19 @@ async function connect(mode?: string, toolboxes?: string) {
   };
 }
 
+const reads = ["get_component_variant", "list_variants"];
+const writes = ["create_variant", "set_component_variant"];
+it.each([
+  ["write", [...reads, ...writes, "export_variant_bom"]],
+  ["readonly", reads],
+  ["manufacturing", [...reads, "export_variant_bom"]],
+] as const)("exposes only permitted assembly variant tools in %s mode", async (mode, expected) => {
+  const session = await connect(mode, "variants");
+  expect((await session.names()).filter((name) => name.includes("variant"))).toEqual(
+    [...expected].sort(),
+  );
+});
+
 describe("parseOperatingMode", () => {
   it("defaults to write", () => {
     expect(parseOperatingMode(undefined)).toEqual({ mode: "write" });

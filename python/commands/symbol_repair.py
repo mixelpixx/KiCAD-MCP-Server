@@ -238,7 +238,7 @@ class SymbolRepairCommands:
                     ),
                 }
 
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8", newline="") as f:
                 f.write(new_text)
             logger.info(
                 "repair_flat_symbols: wrapped %d flat symbol(s) in %s",

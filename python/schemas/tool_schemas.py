@@ -10,6 +10,8 @@ Each tool includes:
 - outputSchema: Optional JSON Schema for return values (structured content)
 """
 
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 from utils.duplicate_strategies import DEFAULT_DUPLICATE_STRATEGIES, DUPLICATE_STRATEGIES
@@ -2664,7 +2666,14 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Reference designator (e.g., R1, C2, U3)",
+                    "description": (
+                        "Reference designator (e.g., R1, C2, U3). Required except for "
+                        "power symbols: for power symbols (power:GND, …) omit it or "
+                        'pass "#PWR?" to use the next free #PWRnn in the project '
+                        "(power:PWR_FLAG gets the next free #FLGnn); a non-power "
+                        "symbol without a reference is an error. The reply's "
+                        "component_reference names the number chosen."
+                    ),
                 },
                 "symbol": {
                     "type": "string",
@@ -2677,7 +2686,7 @@ SCHEMATIC_TOOLS = [
                 "x": {"type": "number", "description": "X coordinate on schematic"},
                 "y": {"type": "number", "description": "Y coordinate on schematic"},
             },
-            "required": ["reference", "symbol", "x", "y"],
+            "required": ["symbol", "x", "y"],
         },
     },
     {
@@ -4388,6 +4397,11 @@ ANALYSIS_TOOLS = [
     },
 ]
 
+# The worker's Python-direct tools/list must expose the same arguments as the MCP server.
+VARIANT_TOOLS = json.loads(
+    Path(__file__).with_name("variant_tools.json").read_text(encoding="utf-8")
+)
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -4405,6 +4419,7 @@ for tool in (
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
     + ANALYSIS_TOOLS
+    + VARIANT_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

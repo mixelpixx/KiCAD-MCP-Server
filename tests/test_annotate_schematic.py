@@ -299,7 +299,10 @@ def test_kicad_cli_netlist_after_annotating_a_sheet_used_twice(tmp_path):
     assert [i["reference"] for i in r["annotated"][0]["instances"]] == ["R2", "R3"]
     out = tmp_path / "out.net"
     run = subprocess.run(
-        [cli, "sch", "export", "netlist", "-o", str(out), str(root)], capture_output=True, text=True
+        [cli, "sch", "export", "netlist", "-o", str(out), str(root)],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
     )
     refs = re.findall(r'\(comp\s+\(ref\s+"([^"]+)"\)', out.read_text(encoding="utf-8"))
     assert [ref for ref, n in Counter(refs).items() if n > 1] == []

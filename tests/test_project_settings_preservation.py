@@ -294,7 +294,7 @@ class TestKeyOrderIsPreserved:
     ]
 
     def test_surviving_keys_keep_kicad_order(self, tmp_path):
-        from utils.project_settings_guard import _write_json_atomic, merge_preserved_keys
+        from utils.project_settings_guard import merge_preserved_keys, write_project_json_atomic
 
         before = {k: {} for k in self.KICAD_ORDER}
         before["net_settings"] = {"classes": [{"name": "Default"}]}
@@ -305,7 +305,7 @@ class TestKeyOrderIsPreserved:
         assert changed is True
 
         pro_path = str(tmp_path / "t.kicad_pro")
-        _write_json_atomic(pro_path, merged)
+        write_project_json_atomic(pro_path, merged)
         written = list(json.loads(Path(pro_path).read_text()).keys())
 
         expected_survivors = [k for k in self.KICAD_ORDER if k != "net_settings"]
@@ -314,7 +314,7 @@ class TestKeyOrderIsPreserved:
         assert written[-1] == "net_settings"
 
     def test_restored_value_is_the_on_disk_one(self, tmp_path):
-        from utils.project_settings_guard import _write_json_atomic, merge_preserved_keys
+        from utils.project_settings_guard import merge_preserved_keys, write_project_json_atomic
 
         before = {"meta": {"version": 3}, "net_settings": _CUSTOM_NET_SETTINGS}
         after = {"meta": {"version": 3}, "net_settings": {"classes": [{"name": "Default"}]}}
@@ -323,5 +323,5 @@ class TestKeyOrderIsPreserved:
         assert changed is True
 
         pro_path = str(tmp_path / "t.kicad_pro")
-        _write_json_atomic(pro_path, merged)
+        write_project_json_atomic(pro_path, merged)
         assert json.loads(Path(pro_path).read_text())["net_settings"] == _CUSTOM_NET_SETTINGS

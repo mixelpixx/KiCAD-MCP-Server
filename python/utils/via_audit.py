@@ -127,7 +127,11 @@ def compare_vias(reference: List[Via], current: List[Via]) -> Dict[str, Any]:
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=60
+        ["git", "-C", str(cwd), *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        stdin=subprocess.DEVNULL,
     )
 
 
@@ -177,6 +181,7 @@ def reference_file(board_path: str, reference: str, tmpdir: str) -> Tuple[Option
         ["git", "-C", str(board.parent), "show", f"{sha}:{rel}"],
         capture_output=True,
         timeout=60,
+        stdin=subprocess.DEVNULL,
     )
     if shown.returncode != 0:
         return None, (

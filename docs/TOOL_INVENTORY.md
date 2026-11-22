@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.9.0
-**Tools registered on the server:** 257
-**Tools indexed for keyword discovery:** 257 in 20 categories
-**Last updated:** 2026-11-15
+**Tools registered on the server:** 261
+**Tools indexed for keyword discovery:** 261 in 21 categories
+**Last updated:** 2026-11-21
 
 ## How to read this document
 
@@ -83,7 +83,7 @@ _Source: `src/tools/board.ts`_
 
 ---
 
-## Component Management (28 tools)
+## Component Management (27 tools)
 
 _Source: `src/tools/component.ts`_
 
@@ -98,9 +98,8 @@ _Source: `src/tools/component.ts`_
 | `set_footprint_type`        | Set the placement type (through_hole / smd / unspecified) and optional exclusion flags on a placed PCB footprint.                           | `component` |
 | `find_component`            | Search components by reference or value                                                                                                     | `component` |
 | `get_component_properties`  | Get all properties of a component                                                                                                           | `component` |
-| `add_component_annotation`  | Add annotation/comment to component                                                                                                         | `component` |
 | `group_components`          | Group multiple components together                                                                                                          | `component` |
-| `replace_component`         | Replace component with different footprint                                                                                                  | `component` |
+| `replace_component`         | Alias of `edit_component`: swap a footprint and value                                                                                       | `component` |
 | `get_component_pads`        | Get all pad information for a component                                                                                                     | `component` |
 | `get_pads`                  | Return pads for one PCB component, selected refs, or all components, including XY, layer, size and net.                                     | `component` |
 | `get_net_pads`              | Return every PCB pad attached to a net name or net code.                                                                                    | `component` |
@@ -289,6 +288,20 @@ _Source: `src/tools/schematic-hierarchy.ts`_
 | `set_sheet_property`           | Add/update a custom property on a hierarchical sheet (metadata, e.g. generator cell identity)                                            | `schematic_hierarchy` |
 | `get_sheet_properties`         | List hierarchical sheets with their full property maps                                                                                   | `schematic_hierarchy` |
 | `create_hierarchical_subsheet` | Create a new sub-sheet .kicad_sch file and link it into a parent schematic in a single call (create_schematic + add_hierarchical_sheet). | `schematic_hierarchy` |
+
+---
+
+## Assembly Variants (5 tools)
+
+_Source: `src/tools/variants.ts`_
+
+| Tool                    | Description                                                                  | Discovery  |
+| ----------------------- | ---------------------------------------------------------------------------- | ---------- |
+| `list_variants`         | List the assembly variants registered in a KiCad project.                    | `variants` |
+| `create_variant`        | Register a named assembly variant in a KiCad project.                        | `variants` |
+| `get_component_variant` | Read a component's DNP and field overrides for an assembly variant.          | `variants` |
+| `set_component_variant` | Set or remove a component's DNP and field overrides for an assembly variant. | `variants` |
+| `export_variant_bom`    | Export the bill of materials for a named assembly variant.                   | `variants` |
 
 ---
 
@@ -528,13 +541,14 @@ _Source: `src/tools/toolboxes.ts`_
 | ------------------------ | -------------------------------------- | ------- |
 | `project.ts`             | Project and Board Files                | 12      |
 | `board.ts`               | Board Management                       | 22      |
-| `component.ts`           | Component Management                   | 28      |
+| `component.ts`           | Component Management                   | 27      |
 | `routing.ts`             | Routing                                | 19      |
 | `design-rules.ts`        | Design Rules and DRC                   | 9       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
 | `schematic.ts`           | Schematic                              | 49      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
+| `variants.ts`            | Assembly Variants                      | 5       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
 | `validation.ts`          | File Validation                        | 2       |
 | `library.ts`             | Footprint Libraries and Library Tables | 7       |
@@ -552,16 +566,16 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **257** |
+| **Total**                |                                        | **261** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 257 of the 257 registered tools.
+These are the categories `search_tools` searches. They cover 261 of the 261 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
 | `board`                    | 18            |
-| `component`                | 24            |
+| `component`                | 23            |
 | `export`                   | 27            |
 | `drc`                      | 10            |
 | `schematic`                | 38            |
@@ -573,6 +587,7 @@ These are the categories `search_tools` searches. They cover 257 of the 257 regi
 | `schematic_batch`          | 6             |
 | `routing`                  | 16            |
 | `autoroute`                | 4             |
+| `variants`                 | 5             |
 | `validation`               | 2             |
 | `footprint`                | 5             |
 | `import`                   | 2             |
@@ -580,6 +595,6 @@ These are the categories `search_tools` searches. They cover 257 of the 257 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **257**       |
+| **Indexed total**          | **261**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **257**       |
+| **Registered total**       | **261**       |

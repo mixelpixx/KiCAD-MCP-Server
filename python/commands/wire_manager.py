@@ -16,6 +16,7 @@ from typing import Any, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
+from utils.file_io import read_text_preserve_newline, write_text_atomic
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, match_paren
 
@@ -82,8 +83,7 @@ def _find_insertion_point(content: str) -> int:
 
 def _text_insert(file_path: Path, sexp_text: str) -> bool:
     """Insert S-expression text into a .kicad_sch file preserving formatting."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    content, newline = read_text_preserve_newline(file_path)
 
     insert_at = _find_insertion_point(content)
     # _find_insertion_point returns a raw character offset; on files where
@@ -98,8 +98,7 @@ def _text_insert(file_path: Path, sexp_text: str) -> bool:
         insert_at = line_start
     content = content[:insert_at] + sexp_text + content[insert_at:]
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    write_text_atomic(file_path, content, newline)
     return True
 
 
@@ -158,6 +157,36 @@ def _make_sheet_pin_text(
     )
 
 
+def _wire_points(item: Any) -> Optional[List[Tuple[float, float]]]:
+    """The stored ``(xy ...)`` points of a ``(wire ...)`` item, or None for anything else."""
+    if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE):
+        return None
+    for part in item[1:]:
+        if isinstance(part, list) and len(part) > 0 and part[0] == _SYM_PTS:
+            points = [
+                (float(p[1]), float(p[2]))
+                for p in part[1:]
+                if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
+            ]
+            return points if len(points) >= 2 else None
+    return None
+
+
+def _distance_to_segment(
+    point: Tuple[float, float], a: Tuple[float, float], b: Tuple[float, float]
+) -> float:
+    """Shortest distance (mm) from ``point`` to the segment ``a``-``b``."""
+    px, py = point
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    length_sq = dx * dx + dy * dy
+    if length_sq == 0:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length_sq))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
 class WireManager:
     """Manage wires in KiCad schematics using S-expression manipulation"""
 
@@ -189,8 +218,7 @@ class WireManager:
         """
         try:
             # Read schematic
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
 
@@ -226,9 +254,7 @@ class WireManager:
             WireManager.sync_junctions(sch_data)
 
             # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                output = kicad_dumps(sch_data)
-                f.write(output)
+            write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
 
             logger.info(f"Successfully added wire to {schematic_path.name}")
             return True
@@ -265,8 +291,7 @@ class WireManager:
                 return False
 
             # Read schematic
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
 
@@ -306,9 +331,7 @@ class WireManager:
             WireManager.sync_junctions(sch_data)
 
             # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                output = kicad_dumps(sch_data)
-                f.write(output)
+            write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
 
             logger.info(f"Successfully added polyline wire to {schematic_path.name}")
             return True
@@ -542,7 +565,7 @@ class WireManager:
             if wires or drop:
                 WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
             logger.info(
                 f"Added {len(labels)} label(s) and {len(wires)} wire(s) to {schematic_path.name}"
@@ -574,8 +597,7 @@ class WireManager:
             True if successful, False otherwise
         """
         try:
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
             label_sexp = WireManager._make_label_sexp(text, position, label_type, orientation)
@@ -592,8 +614,7 @@ class WireManager:
 
             sch_data.insert(sheet_instances_index, label_sexp)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(kicad_dumps(sch_data))
+            write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
 
             logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
             return True
@@ -1015,8 +1036,7 @@ class WireManager:
         """
         try:
             # Read schematic
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
 
@@ -1046,9 +1066,7 @@ class WireManager:
             logger.info(f"Injected no-connect at {position}")
 
             # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                output = kicad_dumps(sch_data)
-                f.write(output)
+            write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
 
             logger.info(f"Successfully added no-connect to {schematic_path.name}")
             return True
@@ -1070,6 +1088,11 @@ class WireManager:
         """
         Delete a wire from the schematic matching given start/end coordinates.
 
+        One call removes one ``(wire)`` segment: both of its stored end points must lie
+        within ``tolerance`` of ``start_point`` and ``end_point`` (in either order). A run
+        that KiCad split into several segments, at a junction or a T, is not matched as a
+        whole; ``wires_touching`` lists the segments at each point so a caller can say why.
+
         Args:
             schematic_path: Path to .kicad_sch file
             start_point: [x, y] coordinates for wire start
@@ -1080,8 +1103,7 @@ class WireManager:
             True if a wire was found and removed, False otherwise
         """
         try:
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
 
@@ -1089,29 +1111,11 @@ class WireManager:
             ex, ey = end_point
 
             for i, item in enumerate(sch_data):
-                if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE):
+                points = _wire_points(item)
+                if points is None:
                     continue
 
-                # Extract pts from the wire s-expression
-                pts_list = None
-                for part in item[1:]:
-                    if isinstance(part, list) and len(part) > 0 and part[0] == _SYM_PTS:
-                        pts_list = part
-                        break
-
-                if pts_list is None:
-                    continue
-
-                xy_points = [
-                    p
-                    for p in pts_list[1:]
-                    if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
-                ]
-                if len(xy_points) < 2:
-                    continue
-
-                x1, y1 = float(xy_points[0][1]), float(xy_points[0][2])
-                x2, y2 = float(xy_points[-1][1]), float(xy_points[-1][2])
+                (x1, y1), (x2, y2) = points[0], points[-1]
 
                 match_fwd = (
                     abs(x1 - sx) < tolerance
@@ -1129,8 +1133,7 @@ class WireManager:
                 if match_fwd or match_rev:
                     del sch_data[i]
                     WireManager.sync_junctions(sch_data)
-                    with open(schematic_path, "w", encoding="utf-8") as f:
-                        f.write(kicad_dumps(sch_data))
+                    write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
                     logger.info(f"Deleted wire from {start_point} to {end_point}")
                     return True
 
@@ -1143,6 +1146,46 @@ class WireManager:
 
             logger.error(traceback.format_exc())
             return False
+
+    @staticmethod
+    def wires_touching(
+        schematic_path: Path, point: List[float], tolerance: float = 0.5
+    ) -> List[dict]:
+        """Wire segments that end at, or pass through, ``point`` (within ``tolerance`` mm).
+
+        Each entry gives the segment's stored ``start`` and ``end`` (as written in the
+        file) and ``at``: "start" or "end" when that stored end point is the one near
+        ``point``, "middle" when the segment passes through it. Used to explain a
+        ``delete_wire`` miss (#521): the usual cause is a run split into several
+        segments, or a point that is not where the wire is stored.
+        """
+        content, _newline = read_text_preserve_newline(schematic_path)
+        target = (float(point[0]), float(point[1]))
+        found: List[dict] = []
+        for item in sexpdata.loads(content):
+            points = _wire_points(item)
+            if points is None:
+                continue
+            start, end = points[0], points[-1]
+            # Same per-axis test as delete_wire, so "at" agrees with what a delete matches.
+            if max(abs(start[0] - target[0]), abs(start[1] - target[1])) < tolerance:
+                at = "start"
+            elif max(abs(end[0] - target[0]), abs(end[1] - target[1])) < tolerance:
+                at = "end"
+            elif any(
+                _distance_to_segment(target, a, b) < tolerance for a, b in zip(points, points[1:])
+            ):
+                at = "middle"
+            else:
+                continue
+            found.append(
+                {
+                    "start": {"x": start[0], "y": start[1]},
+                    "end": {"x": end[0], "y": end[1]},
+                    "at": at,
+                }
+            )
+        return found
 
     @staticmethod
     def delete_label(
@@ -1164,8 +1207,7 @@ class WireManager:
             True if a label was found and removed, False otherwise
         """
         try:
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
 
@@ -1226,8 +1268,7 @@ class WireManager:
                         continue
 
                 del sch_data[i]
-                with open(schematic_path, "w", encoding="utf-8") as f:
-                    f.write(kicad_dumps(sch_data))
+                write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
                 logger.info(f"Deleted label '{net_name}'")
                 return True
 

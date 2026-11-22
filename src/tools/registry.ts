@@ -74,7 +74,6 @@ export const toolCategories: ToolCategory[] = [
       "check_courtyard_overlaps",
       "suggest_placement",
       "move_footprint_text",
-      "add_component_annotation",
       "group_components",
       "replace_component",
       "hierarchical_place",
@@ -298,6 +297,18 @@ export const toolCategories: ToolCategory[] = [
     name: "autoroute",
     description: "Freerouting autorouter: automatic PCB routing via Specctra DSN/SES",
     tools: ["autoroute", "export_dsn", "import_ses", "check_freerouting"],
+  },
+  {
+    name: "variants",
+    description:
+      "Assembly variants: register build options, manage DNP and field overrides, and export a variant BOM",
+    tools: [
+      "list_variants",
+      "create_variant",
+      "get_component_variant",
+      "set_component_variant",
+      "export_variant_bom",
+    ],
   },
   {
     name: "validation",

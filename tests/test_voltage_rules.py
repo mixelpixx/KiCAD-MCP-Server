@@ -280,6 +280,7 @@ def _rule_violations(board_path):
         ["kicad-cli", "pcb", "drc", "--format", "json", "-o", str(rep), str(board_path)],
         capture_output=True,
         check=True,
+        stdin=subprocess.DEVNULL,
     )
     found = set()
     for v in json.loads(rep.read_text())["violations"]:

@@ -32,8 +32,16 @@ from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
+from utils.sheet_tree import instance_paths
 from utils.skip_items import skip_items
-from utils.symbol_instances import annotate_sheet, instance_report
+from utils.symbol_instances import (
+    ReferenceAllocator,
+    _power_lib_ids,
+    annotate_sheet,
+    definition_is_power,
+    instance_report,
+    project_references,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -61,6 +69,54 @@ def _xy(value: Any) -> Optional[List[float]]:
 
 
 _POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
+
+
+def _allocate_power_reference(schematic_file: Path, prefix: str = "#PWR") -> Optional[str]:
+    """The next unused ``{prefix}nn`` in the schematic's project (#524).
+
+    Counts every reference on every sheet the root reaches, so a number
+    taken on another sheet is never re-picked. Returns None when the
+    project cannot be read, so the caller can fall back to the given
+    reference instead of failing the placement.
+    """
+    try:
+        root, _paths = instance_paths(schematic_file)
+        return ReferenceAllocator(project_references(root, schematic_file)).next_free(
+            prefix, zero=True
+        )
+    except Exception as e:
+        logger.warning("Could not allocate a %s reference for %s: %s", prefix, schematic_file, e)
+        return None
+
+
+def _is_power_symbol(loader: Any, schematic_file: Path, library: str, comp_type: str) -> bool:
+    """True when ``library:comp_type`` is a power symbol (#524).
+
+    The ``power:`` library prefix is the usual sign, but a project-library
+    symbol can carry the ``(power)`` flag instead. That is checked two ways,
+    both read-only and both falling back to the prefix when they find
+    nothing: the schematic's own ``lib_symbols`` (via ``_power_lib_ids`` —
+    the definition is already there when the symbol was placed before) and
+    the library definition itself (via the loader's cached extraction —
+    which is also how the placement itself resolves the symbol, so a first
+    placement is recognised too). A symbol neither check recognises is
+    treated as non-power.
+    """
+    lib_id = f"{library}:{comp_type}"
+    if lib_id.lower().startswith("power:"):
+        return True
+    try:
+        if lib_id.lower() in {
+            known.lower() for known in _power_lib_ids(schematic_file.read_text(encoding="utf-8"))
+        }:
+            return True
+    except Exception:
+        pass
+    try:
+        block = loader.extract_symbol_from_library(library, comp_type)
+    except Exception:
+        block = None
+    return bool(block) and definition_is_power(block)
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -167,6 +223,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -179,6 +236,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", str(out_path)],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -295,18 +353,6 @@ class SchematicHandlersMixin:
             comp_type = component.get("type", "R")
             library = component.get("library", "Device")
             reference = component.get("reference", "X?")
-            value = component.get("value", comp_type)
-            footprint = component.get("footprint", "")
-            x = component.get("x", 0)
-            y = component.get("y", 0)
-            unit = component.get("unit", 1)
-            # The TS layer puts these inside `component` alongside x/y/unit
-            # (src/tools/schematic.ts). Dropping them here silently ignored the
-            # documented angle/mirrorY arguments, so every symbol landed at 0°
-            # and callers had to follow up with rotate_schematic_component.
-            angle = component.get("angle", 0)
-            mirror_y = bool(component.get("mirrorY", False))
-
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
             # (contains sym-lib-table or a .kicad_pro file).  Schematics stored in a
@@ -320,6 +366,50 @@ class SchematicHandlersMixin:
                     break
 
             loader = DynamicSymbolLoader(project_path=derived_project_path)
+
+            # Power symbols (#524): placed without a reference, or with the
+            # placeholder, a power symbol gets the next unused number in the
+            # project — every sheet and every instance path counted — instead
+            # of the literal placeholder, which would leave several power
+            # symbols sharing one unannotated "#PWR?" reference. (KiCad loads
+            # a lone "#PWR?" fine; the duplicates are the problem.) The
+            # chosen number is the reference the placement writes and the
+            # reply reports. An explicit reference other than the placeholder
+            # is left alone, so the power check below runs only when the
+            # caller gave no usable reference. power:PWR_FLAG is a power
+            # symbol too, but its prefix is "#FLG", never "#PWR".
+            if reference in (None, "", "X?", "#PWR?", "#PWR", "#FLG?", "#FLG"):
+                if _is_power_symbol(loader, schematic_file, library, comp_type):
+                    prefix = "#FLG" if comp_type.lower() == "pwr_flag" else "#PWR"
+                    if reference in (None, "", "X?", f"{prefix}?", prefix):
+                        allocated = _allocate_power_reference(schematic_file, prefix)
+                        if allocated is not None:
+                            reference = allocated
+                elif reference in (None, "", "X?"):
+                    # The reference is optional only so power symbols can omit it
+                    # and be allocated the next free #PWRnn/#FLGnn. Every other
+                    # symbol needs one: leaving it out used to place a resistor
+                    # silently named "X?", which is not a reference at all.
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Reference is required for {library}:{comp_type}: omit it "
+                            "only for power symbols (power:GND, …), which are allocated "
+                            "the next free #PWRnn (power:PWR_FLAG: #FLGnn)."
+                        ),
+                    }
+            value = component.get("value", comp_type)
+            footprint = component.get("footprint", "")
+            x = component.get("x", 0)
+            y = component.get("y", 0)
+            unit = component.get("unit", 1)
+            # The TS layer puts these inside `component` alongside x/y/unit
+            # (src/tools/schematic.ts). Dropping them here silently ignored the
+            # documented angle/mirrorY arguments, so every symbol landed at 0°
+            # and callers had to follow up with rotate_schematic_component.
+            angle = component.get("angle", 0)
+            mirror_y = bool(component.get("mirrorY", False))
+
             loader.add_component(
                 schematic_file,
                 library,
@@ -490,7 +580,7 @@ class SchematicHandlersMixin:
                     trim_start -= 1
                 content = content[:trim_start] + content[b_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             deleted_count = len(blocks_to_delete)
@@ -653,7 +743,7 @@ class SchematicHandlersMixin:
             if doomed_indices:
                 for i in reversed(doomed_indices):
                     del sch_data[i]
-                with open(sch_file, "w", encoding="utf-8") as f:
+                with open(sch_file, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
                 logger.info(
                     "Deleted %d dangling label(s) at removed pin positions",
@@ -950,7 +1040,7 @@ class SchematicHandlersMixin:
 
             content = content[:block_start] + block_text + content[block_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             changes: Dict[str, Any] = {
@@ -1384,7 +1474,9 @@ class SchematicHandlersMixin:
             if params.get("blackAndWhite"):
                 cmd.insert(-1, "--black-and-white")
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode == 0:
                 return {"success": True, "file": {"path": output_path}}
@@ -1585,7 +1677,9 @@ class SchematicHandlersMixin:
 
             result = {}
             for pin_num, coords in all_pins.items():
-                entry = {"x": coords[0], "y": coords[1]}
+                # Rounded to KiCad's schematic resolution (0.0001 mm), so the values read
+                # the same as the file: 439.42, not 439.41999999999996 (#521).
+                entry = {"x": round(coords[0], 4), "y": round(coords[1], 4)}
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
                     entry["angle"] = (
@@ -1637,7 +1731,9 @@ class SchematicHandlersMixin:
                     "--no-background-color",
                     schematic_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -2132,7 +2228,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2231,7 +2327,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2309,8 +2405,7 @@ class SchematicHandlersMixin:
             deleted = WireManager.delete_wire(Path(schematic_path), start_point, end_point)
             if deleted:
                 return {"success": True}
-            else:
-                return {"success": False, "message": "No matching wire found"}
+            return self._delete_wire_miss(Path(schematic_path), start_point, end_point)
 
         except Exception as e:
             logger.error(f"Error deleting schematic wire: {e}")
@@ -2318,6 +2413,52 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _delete_wire_miss(
+        schematic_path: Any, start_point: List[float], end_point: List[float]
+    ) -> Dict[str, Any]:
+        """Explain a delete_schematic_wire miss (#521).
+
+        A delete removes one stored segment whose two end points are both within 0.5 mm of
+        start and end. The usual misses are a run KiCad split into several segments (at a
+        junction or a T) and a point that is not where the wire is stored, so list the
+        segments at each point with their stored coordinates.
+        """
+        from commands.wire_manager import WireManager
+
+        at_start = WireManager.wires_touching(schematic_path, start_point)
+        at_end = WireManager.wires_touching(schematic_path, end_point)
+
+        def fmt(point: Any) -> str:
+            return f"({point['x']:g}, {point['y']:g})"
+
+        def describe(label: str, point: List[float], wires: List[Dict[str, Any]]) -> str:
+            where = f"({float(point[0]):g}, {float(point[1]):g})"
+            if not wires:
+                return f"No wire touches {label} {where}."
+            parts = [
+                f"{fmt(w['start'])} -> {fmt(w['end'])}"
+                + (" (passes through)" if w["at"] == "middle" else "")
+                for w in wires
+            ]
+            return f"Wires at {label} {where}: " + "; ".join(parts) + "."
+
+        message = (
+            "No matching wire found. A delete removes one wire segment whose two stored end "
+            "points are both within 0.5 mm of start and end (in either order); a run split "
+            "into several segments at a junction or a T has to be deleted one segment at a "
+            "time. "
+            + describe("start", start_point, at_start)
+            + " "
+            + describe("end", end_point, at_end)
+        )
+        return {
+            "success": False,
+            "message": message,
+            "wiresAtStart": at_start,
+            "wiresAtEnd": at_end,
+        }
 
     def _handle_delete_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a net label from the schematic"""
@@ -2433,7 +2574,7 @@ class SchematicHandlersMixin:
                 rotation = at_entry[3] if len(at_entry) > 3 else 0
                 item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
 
-                with open(schematic_path, "w", encoding="utf-8") as f:
+                with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
 
                 return {
@@ -2496,7 +2637,9 @@ class SchematicHandlersMixin:
                 if params.get("blackAndWhite"):
                     cmd.append("--black-and-white")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -2805,7 +2948,7 @@ class SchematicHandlersMixin:
                     "message": f"Sheet '{sheet_name}' not found in {schematic_path}",
                 }
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(modified)
 
             return {
@@ -2845,7 +2988,9 @@ class SchematicHandlersMixin:
                     "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
                 }
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", newline="", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
@@ -2861,7 +3006,9 @@ class SchematicHandlersMixin:
                 ]
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL
+                )
 
                 # kicad-cli returns non-zero when ERC violations are found —
                 # this is normal, not an error.  Only fail when no JSON was
@@ -3484,7 +3631,9 @@ class SchematicHandlersMixin:
                 tmp_path,
                 schematic_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
             if result.returncode != 0:
                 logger.warning(
                     f"kicad-cli netlist export failed (exit {result.returncode}): "
@@ -4141,7 +4290,9 @@ class SchematicHandlersMixin:
                     tmp_dir,
                     schematic_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {

@@ -444,3 +444,427 @@ class TestGridSnap:
         assert _find_placed_symbol_position(content, "R1") == (101.6, 50.8)
         assert _find_placed_symbol_position(content, "R2") == (127.0, 63.5)
         assert _find_placed_symbol_position(content, "R99") is None
+
+
+# ---------------------------------------------------------------------------
+# Power symbols — auto-pick the next free #PWRnn (#524)
+# ---------------------------------------------------------------------------
+
+# A power symbol the way KiCad ships it: Reference hidden, Value shown.
+# The placed blocks go before (sheet_instances ...), as create_component_instance does.
+_POWER_SCH = """(kicad_sch (version 20250114) (generator "test")
+  (uuid "{uuid}")
+  (paper "A4")
+  (lib_symbols
+    (symbol "{lib_id}" (power) (in_bom no) (on_board yes)
+      (property "Reference" "{ref_placeholder}" (at 0 -6.35 0)
+        (effects (font (size 1.27 1.27)) (hide yes))
+      )
+      (property "Value" "{value}" (at 0 -3.81 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+      (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    )
+  )
+{sheet_block}  (sheet_instances (path "/" (page "1")))
+)
+"""
+
+
+def _power_sch(
+    path: Path,
+    uuid: str,
+    sheet_block: str = "",
+    lib_id: str = "power:GND",
+    ref_placeholder: str = "#PWR",
+    value: str = "GND",
+) -> Path:
+    path.write_text(
+        _POWER_SCH.format(
+            uuid=uuid,
+            sheet_block=sheet_block,
+            lib_id=lib_id,
+            ref_placeholder=ref_placeholder,
+            value=value,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_project_lib(
+    tmp_path: Path, lib_name: str, symbol: str, ref_placeholder: str, power: bool
+) -> None:
+    """A project library with one symbol, registered in the project sym-lib-table.
+
+    *power* decides whether the symbol definition carries the (power) flag.
+    """
+    flag = " (power)" if power else ""
+    (tmp_path / f"{lib_name}.kicad_sym").write_text(
+        f'(kicad_symbol_lib (version 20231120) (generator "test")\n'
+        f'  (symbol "{symbol}"{flag} (pin_numbers hide) (pin_names hide)\n'
+        f'    (property "Reference" "{ref_placeholder}" (at 0 -6.35 0)\n'
+        "      (effects (font (size 1.27 1.27)) (hide yes))\n"
+        "    )\n"
+        f'    (property "Value" "{symbol}" (at 0 -3.81 0) (effects (font (size 1.27 1.27))))\n'
+        '    (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))\n'
+        '    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))\n'
+        "  )\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    lib_file = tmp_path / f"{lib_name}.kicad_sym"
+    (tmp_path / "sym-lib-table").write_text(
+        "(sym_lib_table\n"
+        f'  (lib (name "{lib_name}")(type "KiCad")(uri "{lib_file}")(options "")(descr ""))\n'
+        ")\n",
+        encoding="utf-8",
+    )
+
+
+def _placed_power_block(text: str, reference: str, lib_id: str = "power:GND") -> str:
+    """The placed *lib_id* block whose Reference property is *reference*."""
+    starts = [m.start() for m in re.finditer(rf'\(symbol \(lib_id "{re.escape(lib_id)}"\)', text)]
+    assert starts, f"no placed {lib_id} block in schematic"
+    for start in reversed(starts):
+        depth = 0
+        i = start
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        block = text[start : i + 1]
+        if f'(property "Reference" "{reference}"' in block:
+            return block
+    raise AssertionError(f"no placed {lib_id} block with reference {reference}")
+
+
+@pytest.mark.unit
+class TestAddSchematicComponentPowerReference:
+    """add_schematic_component picks the next free #PWRnn for power symbols (#524).
+
+    Before the fix, placing power:GND with "#PWR?" (or no reference) wrote the
+    literal placeholder into the schematic, so every power symbol placed that
+    way ended up with the same unannotated reference "#PWR?" — the only
+    workaround was cloning a power symbol by hand. (A lone "#PWR?" loads in
+    KiCad; the duplicate references are the problem.)
+    """
+
+    def _call_handler(self, params: dict) -> dict:
+        from kicad_interface import KiCADInterface
+
+        return KiCADInterface()._handle_add_schematic_component(params)
+
+    def _place(
+        self,
+        sch: Path,
+        reference: Any,
+        x: float = 100,
+        y: float = 100,
+        symbol: str = "GND",
+        library: str = "power",
+    ) -> dict:
+        return self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": library,
+                    "type": symbol,
+                    "reference": reference,
+                    "value": symbol,
+                    "x": x,
+                    "y": y,
+                },
+            }
+        )
+
+    def _seed(self, sch: Path, *references: str, symbol: str = "GND") -> None:
+        """Place power symbols with explicit references, via the loader."""
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        loader = DynamicSymbolLoader(project_path=sch.parent)
+        y = 50.8
+        for reference in references:
+            loader.create_component_instance(
+                sch, "power", symbol, reference=reference, value=symbol, x=101.6, y=y
+            )
+            y += 25.4
+
+    def test_pwr_question_mark_allocates_next_free(self, tmp_path: Any) -> None:
+        sch = _power_sch(tmp_path / "test.kicad_sch", "aaaaaaaa-0000-0000-0000-000000000001")
+        self._seed(sch, "#PWR01", "#PWR02")
+
+        result = self._place(sch, "#PWR?")
+
+        assert result["success"] is True
+        assert result["component_reference"] == "#PWR03"
+        text = sch.read_text(encoding="utf-8")
+        assert '"#PWR?"' not in text
+        block = _placed_power_block(text, "#PWR03")
+        assert '(reference "#PWR03")' in block
+
+    def test_missing_reference_allocates_next_free(self, tmp_path: Any) -> None:
+        sch = _power_sch(tmp_path / "test.kicad_sch", "aaaaaaaa-0000-0000-0000-000000000001")
+        self._seed(sch, "#PWR01", "#PWR02")
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "power",
+                    "type": "GND",
+                    # no "reference" key at all
+                    "value": "GND",
+                    "x": 100,
+                    "y": 100,
+                },
+            }
+        )
+
+        assert result["success"] is True
+        assert result["component_reference"] == "#PWR03"
+        assert '"#PWR?"' not in sch.read_text(encoding="utf-8")
+
+    def test_explicit_reference_is_left_alone(self, tmp_path: Any) -> None:
+        sch = _power_sch(tmp_path / "test.kicad_sch", "aaaaaaaa-0000-0000-0000-000000000001")
+        self._seed(sch, "#PWR01", "#PWR02")
+
+        result = self._place(sch, "#PWR07")
+
+        assert result["success"] is True
+        assert result["component_reference"] == "#PWR07"
+        assert _placed_power_block(sch.read_text(encoding="utf-8"), "#PWR07")
+
+    def test_non_power_symbol_without_reference_is_an_error(self, tmp_path: Any) -> None:
+        """The optional reference is power-only: a resistor with no reference is an error."""
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {"library": "Device", "type": "R", "value": "1k", "x": 10, "y": 10},
+            }
+        )
+
+        assert result["success"] is False
+        assert "reference" in result["message"].lower()
+        assert '"X?"' not in sch.read_text(encoding="utf-8")
+
+    def test_non_power_symbol_with_x_question_mark_is_an_error(self, tmp_path: Any) -> None:
+        """An explicit "X?" is no reference either: it used to be the silent default."""
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "Device",
+                    "type": "R",
+                    "reference": "X?",
+                    "value": "1k",
+                    "x": 10,
+                    "y": 10,
+                },
+            }
+        )
+
+        assert result["success"] is False
+        assert "reference" in result["message"].lower()
+        assert '"X?"' not in sch.read_text(encoding="utf-8")
+
+    def test_non_power_symbol_with_empty_reference_is_an_error(self, tmp_path: Any) -> None:
+        """An empty reference is no reference either."""
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "Device",
+                    "type": "R",
+                    "reference": "",
+                    "value": "1k",
+                    "x": 10,
+                    "y": 10,
+                },
+            }
+        )
+
+        assert result["success"] is False
+        assert "reference" in result["message"].lower()
+
+    def test_non_power_symbol_with_explicit_reference_still_works(self, tmp_path: Any) -> None:
+        """Only the omission is an error: an explicit reference places as before."""
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "Device",
+                    "type": "R",
+                    "reference": "R1",
+                    "value": "1k",
+                    "x": 10,
+                    "y": 10,
+                },
+            }
+        )
+
+        assert result["success"] is True
+        assert result["component_reference"] == "R1"
+
+    def test_pwr_flag_without_reference_allocates_next_free_flg(self, tmp_path: Any) -> None:
+        """power:PWR_FLAG is a power symbol with prefix #FLG, never #PWR (#524)."""
+        sch = _power_sch(
+            tmp_path / "test.kicad_sch",
+            "aaaaaaaa-0000-0000-0000-000000000001",
+            lib_id="power:PWR_FLAG",
+            ref_placeholder="#FLG",
+            value="PWR_FLAG",
+        )
+        self._seed(sch, "#FLG01", symbol="PWR_FLAG")
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "power",
+                    "type": "PWR_FLAG",
+                    # no "reference" key at all
+                    "value": "PWR_FLAG",
+                    "x": 100,
+                    "y": 100,
+                },
+            }
+        )
+
+        assert result["success"] is True
+        assert result["component_reference"] == "#FLG02"
+        text = sch.read_text(encoding="utf-8")
+        assert '"X?"' not in text
+        block = _placed_power_block(text, "#FLG02", lib_id="power:PWR_FLAG")
+        assert '(reference "#FLG02")' in block
+
+        # The "#FLG?" placeholder allocates the same way.
+        result = self._place(sch, "#FLG?", x=150, symbol="PWR_FLAG")
+
+        assert result["success"] is True
+        assert result["component_reference"] == "#FLG03"
+
+    def test_project_library_power_symbol_allocates_next_free(self, tmp_path: Any) -> None:
+        """A project-library symbol with the (power) flag is a power symbol too (#524).
+
+        The definition is not in the schematic yet — this is its first placement —
+        so the flag is read from the library itself, not from lib_symbols.
+        """
+        _write_project_lib(tmp_path, "MyLib", "MyGND", "#PWR", power=True)
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "MyLib",
+                    "type": "MyGND",
+                    # no "reference" key at all
+                    "value": "MyGND",
+                    "x": 100,
+                    "y": 100,
+                },
+            }
+        )
+
+        assert result["success"] is True, result
+        assert result["component_reference"] == "#PWR01"
+        text = sch.read_text(encoding="utf-8")
+        assert '"X?"' not in text
+        block = _placed_power_block(text, "#PWR01", lib_id="MyLib:MyGND")
+        assert '(reference "#PWR01")' in block
+
+    def test_power_symbol_definition_already_in_schematic_allocates_next_free(
+        self, tmp_path: Any
+    ) -> None:
+        """A (power) definition already in lib_symbols counts even with no library file."""
+        sch = _power_sch(
+            tmp_path / "test.kicad_sch",
+            "aaaaaaaa-0000-0000-0000-000000000001",
+            lib_id="MyLib:MyGND",
+            ref_placeholder="#PWR",
+            value="MyGND",
+        )
+        # No sym-lib-table, no .kicad_sym: the library cannot resolve.
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "MyLib",
+                    "type": "MyGND",
+                    # no "reference" key at all
+                    "value": "MyGND",
+                    "x": 100,
+                    "y": 100,
+                },
+            }
+        )
+
+        assert result["success"] is True, result
+        assert result["component_reference"] == "#PWR01"
+
+    def test_project_library_symbol_without_power_flag_still_needs_a_reference(
+        self, tmp_path: Any
+    ) -> None:
+        """The (power) flag is what makes a project-library symbol a power symbol."""
+        _write_project_lib(tmp_path, "MyLib", "MyR", "R", power=False)
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "MyLib",
+                    "type": "MyR",
+                    # no "reference" key at all
+                    "value": "1k",
+                    "x": 100,
+                    "y": 100,
+                },
+            }
+        )
+
+        assert result["success"] is False
+        assert "reference" in result["message"].lower()
+
+    def test_number_taken_on_another_sheet_is_not_repicked(self, tmp_path: Any) -> None:
+        """#PWR02 lives only on the sub-sheet; the root placement must not reuse it."""
+        (tmp_path / "design.kicad_pro").write_text('{"meta":{"version":1}}', encoding="utf-8")
+        root_uuid = "aaaaaaaa-0000-0000-0000-000000000001"
+        block_uuid = "bbbbbbbb-0000-0000-0000-000000000002"
+        sub_uuid = "cccccccc-0000-0000-0000-000000000003"
+        sheet_block = (
+            "  (sheet (at 50 50) (size 30 20)\n"
+            f'    (uuid "{block_uuid}")\n'
+            '    (property "Sheet name" "Sub" (at 50 48 0) (effects (font (size 1.27 1.27))))\n'
+            '    (property "Sheet file" "sub.kicad_sch" (at 50 72 0)'
+            " (effects (font (size 1.27 1.27))))\n"
+            "  )\n"
+        )
+        root = _power_sch(tmp_path / "design.kicad_sch", root_uuid, sheet_block)
+        sub = _power_sch(tmp_path / "sub.kicad_sch", sub_uuid)
+        self._seed(sub, "#PWR02")
+
+        result = self._place(root, "#PWR?")
+
+        assert result["success"] is True
+        assert result["component_reference"] == "#PWR01"
+        assert _placed_power_block(root.read_text(encoding="utf-8"), "#PWR01")

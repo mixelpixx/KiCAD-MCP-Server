@@ -311,7 +311,7 @@ class SchematicDeclutterCommands:
                     )
                     n += 1 if changed else 0
                 if n:
-                    sch_path.write_text(content, encoding="utf-8")
+                    sch_path.write_bytes(content.encode("utf-8"))
                 applied = True
 
             return {

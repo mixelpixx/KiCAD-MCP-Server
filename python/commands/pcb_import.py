@@ -99,7 +99,9 @@ class PcbImportCommands:
         cmd.append(input_file)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL
+            )
         except Exception as e:  # noqa: BLE001 - surface subprocess failures as tool errors
             return {"success": False, "error": str(e)}
 

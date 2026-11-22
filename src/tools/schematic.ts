@@ -36,7 +36,15 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       symbol: z
         .string()
         .describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
-      reference: z.string().describe("Component reference (e.g., R1, U1)"),
+      reference: z
+        .string()
+        .optional()
+        .describe(
+          "Component reference (e.g., R1, U1). Required except for power symbols: " +
+            'for power:GND, … omit it or pass "#PWR?" to use the next free #PWRnn ' +
+            "in the project (power:PWR_FLAG gets the next free #FLGnn). A non-power " +
+            "symbol placed without a reference is an error.",
+        ),
       value: z.string().optional().describe("Component value"),
       footprint: z
         .string()
@@ -71,7 +79,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
     async (args: {
       schematicPath: string;
       symbol: string;
-      reference: string;
+      reference?: string;
       value?: string;
       footprint?: string;
       position?: { x: number; y: number };
@@ -103,11 +111,15 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
 
       const result = await callKicadScript("add_schematic_component", transformed);
       if (result.success) {
+        // For a power symbol the backend may have picked the reference
+        // (next free #PWRnn); report the one actually placed, not the
+        // "#PWR?" the caller passed.
+        const placed = result.component_reference ?? args.reference;
         return {
           content: [
             {
               type: "text",
-              text: `Successfully added ${args.reference} (${args.symbol}) to schematic`,
+              text: `Successfully added ${placed} (${args.symbol}) to schematic`,
             },
           ],
         };
@@ -1325,7 +1337,9 @@ edit_schematic_component and set its value to an empty string.`,
   // Delete wire from schematic
   server.tool(
     "delete_schematic_wire",
-    "Remove a wire from the schematic by start and end coordinates.",
+    "Remove one wire segment from the schematic by its start and end coordinates. Both stored end points must lie within 0.5 mm of start and end (in either order). " +
+      "A run that KiCad split into several segments at a junction or a T is deleted one segment at a time. " +
+      "On a miss, the reply lists the wire segments at each point with their stored coordinates.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),

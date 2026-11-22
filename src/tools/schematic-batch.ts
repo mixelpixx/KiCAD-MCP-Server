@@ -216,7 +216,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
   // Net labels on many pins
   server.tool(
     "batch_connect",
-    "Place net labels on multiple pins in one call to wire nets quickly. 'connections' is a map {reference: {pin: netName}} where pin is a number or name. labelType selects 'label' (sheet-local, the default) or 'global_label' (connects across all sheets by name — use this for power rails and any net that spans sheets). For local labels, if a facing label for the same net is nearby a wire is drawn instead of a duplicate label; global labels are placed one-per-pin since they join their net by name. Set replace=true to clear any existing label at a pin first. Warns about power nets missing a PWR_FLAG.",
+    "Place net labels on multiple pins in one call to wire nets quickly. 'connections' is a map {reference: {pin: netName}} where pin is a number or name. labelType selects 'label' (sheet-local, the default) or 'global_label' (connects across all sheets by name — use this for power rails and any net that spans sheets). For local labels, if a facing label for the same net is nearby a wire is drawn instead of a duplicate label; global labels are placed one-per-pin since they join their net by name. Set replace=true to clear any existing label at a pin first. Warns about power nets that have no PWR_FLAG, saying what a flag does and that one belongs only where the rail is supplied from off the sheet (a connector or a battery).",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       connections: z

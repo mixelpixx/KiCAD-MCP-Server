@@ -55,6 +55,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and os.path.exists(out_path):
             with open(out_path, "rb") as f:
@@ -67,6 +68,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", out_path],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and os.path.exists(out_path):
             with open(out_path, "rb") as f:
@@ -225,7 +227,9 @@ class BoardViewCommands:
                 cmd.append(pcb_path)
 
                 try:
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                    )
                 except subprocess.TimeoutExpired:
                     return {
                         "success": False,

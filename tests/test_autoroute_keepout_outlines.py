@@ -159,10 +159,17 @@ def test_every_outline_of_a_rule_area_is_exported(tmp_path):
     assert any(24999 <= x <= 33001 for x in xs[1:])
     # y is negated, as KiCad writes it
     assert all(float(pts.split()[1]) < 0 for _, pts in after)
-    # the file keeps its line endings and everything outside the inserted line
-    assert patched.count(b"\r\n") == raw.count(b"\r\n")
-    assert patched.startswith(raw[: raw.index(b"(placement") - 4])
-    assert patched.endswith(raw[raw.index(b"(placement") :])
+    # the file keeps its line endings (KiCad writes CRLF on Windows, LF elsewhere; the inserted
+    # line follows the file) and everything outside the inserted line
+    if b"\r\n" in raw:
+        assert b"\n" not in patched.replace(b"\r\n", b"")
+    else:
+        assert b"\r" not in patched
+    struct_close = raw.rindex(b")", 0, raw.index(b"(placement"))
+    line_start = raw.rindex(b"\n", 0, struct_close) + 1
+    assert patched.startswith(raw[:line_start])
+    assert patched.endswith(raw[line_start:])
+    assert len(patched.splitlines()) == len(raw.splitlines()) + 1
 
 
 @pytest.mark.integration

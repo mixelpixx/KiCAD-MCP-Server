@@ -440,7 +440,9 @@ def test_kicad_cli_netlist_has_a_part_per_use(tmp_path):
         pytest.skip("kicad-cli not available")
     if DynamicSymbolLoader().find_library_file("Device") is None:
         pytest.skip("KiCad's Device symbol library not installed")
-    version = subprocess.run([cli, "version"], capture_output=True, text=True).stdout
+    version = subprocess.run(
+        [cli, "version"], capture_output=True, text=True, stdin=subprocess.DEVNULL
+    ).stdout
     if int(re.match(r"\s*(\d+)", version or "0").group(1)) < 9:
         pytest.skip("the fixture uses the KiCad 9 file format")
 
@@ -472,6 +474,7 @@ def test_kicad_cli_netlist_has_a_part_per_use(tmp_path):
         [cli, "sch", "export", "netlist", "-o", str(out), str(root)],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     refs = re.findall(r'\(comp\s+\(ref\s+"([^"]+)"\)', out.read_text(encoding="utf-8"))
     assert sorted(refs) == ["R1", "R2", "R3", "R4"], refs

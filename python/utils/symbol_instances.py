@@ -370,10 +370,21 @@ def _power_lib_ids(text: str) -> Set[str]:
             if not m:
                 continue
             definition = block[sym : match_paren(block, sym) + 1]
-            if any(_POWER_HEAD.match(definition, c) for c in iter_child_offsets(definition)):
+            if definition_is_power(definition):
                 ids.add(unescape_sexpr_string(m.group(1)))
         break
     return ids
+
+
+def definition_is_power(block: str) -> bool:
+    """True when a symbol definition block carries the top-level ``(power)`` flag.
+
+    The same check ``_power_lib_ids`` applies to each definition in a
+    schematic's ``lib_symbols``; this form takes one definition block, as a
+    library extraction returns it, so a project-library symbol can be
+    recognised as a power symbol before it is ever placed.
+    """
+    return any(_POWER_HEAD.match(block, c) for c in iter_child_offsets(block))
 
 
 class _Part(NamedTuple):
