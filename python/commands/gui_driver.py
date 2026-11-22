@@ -173,28 +173,21 @@ def ensure_helper_installed(
     return {"installed": installed, "current": current}
 
 
-# Seed list of destructive menu labels (docs/gui_destructive_seed.txt,
-# regex-derived from the live pcbnew 215-item enumeration; embedded here so the
-# installed wheel doesn't depend on docs/). Matching is on NORMALIZED labels —
-# see _normalize_label — so "Update PCB from Schematic…" and
-# "Update PCB from Schematic..." both hit.
-DESTRUCTIVE_SEED_LABELS = [
-    "Append Board...",
-    "Cleanup Graphics...",
-    "Cleanup Tracks & Vias...",
-    "Clear Recent Files",
-    "Delete",
-    "Import Non-KiCad Board File…",
-    "Interactive Delete Tool",
-    "New...",
-    "Remove Unused Pads...",
-    "Rescue",
-    "Reset Drill Origin",
-    "Reset Grid Origin",
-    "Revert",
-    "Update PCB from Schematic…",
-    "Update Schematic from PCB...",
-]
+# Seed list of destructive menu labels — single source is
+# docs/gui_destructive_seed.txt (regex-derived from the live pcbnew 215-item
+# enumeration), loaded at runtime so the list can't drift from the file.
+# Resolved relative to this module, the same idiom as _bundled_helper_dir.
+# Matching is on NORMALIZED labels — see _normalize_label — so
+# "Update PCB from Schematic…" and "Update PCB from Schematic..." both hit.
+_DESTRUCTIVE_SEED_FILE = Path(__file__).resolve().parents[2] / "docs" / "gui_destructive_seed.txt"
+
+
+def _load_destructive_seed_labels(path: Path = _DESTRUCTIVE_SEED_FILE) -> List[str]:
+    """Read the destructive-label seed list from its single source file."""
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+DESTRUCTIVE_SEED_LABELS = _load_destructive_seed_labels()
 
 # Preferred matching path: resolved KiCad TOOL_ACTION names (survive label
 # renames). wx menu items expose no public action mapping today, so the helper

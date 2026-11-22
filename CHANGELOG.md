@@ -167,6 +167,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Destructive-label seed list is now read from its file, not duplicated in
+  code** (#412, item 7). `DESTRUCTIVE_SEED_LABELS` in `gui_driver.py`
+  duplicated `docs/gui_destructive_seed.txt` and the two could drift; the list
+  is now loaded from the file at runtime, so the file is the single source.
+  A test fails if the runtime list and the file ever disagree.
 - **IPC tools that rewrite a footprint warn that KiCad drops data from it**
   (#569). `move_component`, `rotate_component`, `set_footprint_type` and
   `add_component_3d_model` send each footprint back to KiCad with

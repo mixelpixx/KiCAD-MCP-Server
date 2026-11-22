@@ -162,6 +162,29 @@ class TestDestructiveFlagging:
         assert resolve_name(tree, DESTRUCTIVE_PREFIX + "Revert") == (4098, "menu")
 
 
+class TestDestructiveSeedSingleSource:
+    def test_seed_labels_match_docs_file(self):
+        # the runtime list IS the file: if the two ever disagree, this fails
+        lines = [
+            line.strip()
+            for line in (REPO_ROOT / "docs" / "gui_destructive_seed.txt")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line.strip()
+        ]
+        assert gui_driver.DESTRUCTIVE_SEED_LABELS == lines
+
+    def test_loader_reads_the_file_not_embedded_data(self, tmp_path):
+        # a file holding a label that exists nowhere in the code must load
+        # as-is, proving the runtime list comes from the file
+        seed = tmp_path / "seed.txt"
+        seed.write_text("Nuke Everything...\n\n  Keep Me  \n", encoding="utf-8")
+        assert gui_driver._load_destructive_seed_labels(seed) == [
+            "Nuke Everything...",
+            "Keep Me",
+        ]
+
+
 class TestResolveName:
     def test_menu_by_label(self):
         assert resolve_name(_captured_tree(), "Zoom to Fit") == (4200, "menu")
