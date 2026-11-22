@@ -299,6 +299,18 @@ export const toolCategories: ToolCategory[] = [
     tools: ["autoroute", "export_dsn", "import_ses", "check_freerouting"],
   },
   {
+    name: "variants",
+    description:
+      "Assembly variants: register build options, manage DNP and field overrides, and export a variant BOM",
+    tools: [
+      "list_variants",
+      "create_variant",
+      "get_component_variant",
+      "set_component_variant",
+      "export_variant_bom",
+    ],
+  },
+  {
     name: "validation",
     description:
       "File integrity checks: locate structural damage in schematics and symbol libraries before KiCad refuses to open them",

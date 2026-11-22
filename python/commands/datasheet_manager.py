@@ -232,7 +232,7 @@ class DatasheetManager:
             i += 1
 
         if not dry_run and updated > 0:
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write("\n".join(new_lines))
             logger.info(f"Saved {schematic_path.name}: {updated} datasheet URLs written")
 

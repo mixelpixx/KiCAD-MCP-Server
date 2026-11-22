@@ -127,7 +127,7 @@ def repair_mirror_lib_symbols(
     for start, end, new in sorted(replacements, key=lambda r: r[0], reverse=True):
         content = content[:start] + new + content[end:]
     if restored:
-        schematic_path.write_text(prettify(content), encoding="utf-8")
+        schematic_path.write_bytes(prettify(content).encode("utf-8"))
     return restored
 
 
@@ -182,7 +182,7 @@ def update_schematic_symbols(
     if replacements:
         for start, end, _old, new in sorted(replacements, key=lambda r: r[0], reverse=True):
             content = content[:start] + new + content[end:]
-        schematic_path.write_text(prettify(content), encoding="utf-8")
+        schematic_path.write_bytes(prettify(content).encode("utf-8"))
 
     return {"updated": updated, "injected": injected, "skipped": skipped}
 

@@ -324,7 +324,11 @@ class TestRealKicadLoadsTheResult:
     @staticmethod
     def _cli_major() -> int:
         out = subprocess.run(
-            [str(_KICAD_CLI), "version"], capture_output=True, text=True, timeout=60
+            [str(_KICAD_CLI), "version"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         m = re.match(r"\s*(\d+)", out.stdout)
         return int(m.group(1)) if m else 0
@@ -344,6 +348,7 @@ class TestRealKicadLoadsTheResult:
             capture_output=True,
             text=True,
             timeout=180,
+            stdin=subprocess.DEVNULL,
         )
         assert out.returncode == 0, (
             f"KiCad refused a v{version} schematic it should accept.\n"

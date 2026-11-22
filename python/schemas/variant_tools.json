@@ -1,0 +1,148 @@
+[
+  {
+    "name": "list_variants",
+    "title": "List Assembly Variants",
+    "description": "List the assembly variants registered in a KiCad project.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the saved .kicad_pro project file"
+        }
+      },
+      "required": ["projectPath"]
+    }
+  },
+  {
+    "name": "create_variant",
+    "title": "Create Assembly Variant",
+    "description": "Register a named assembly variant in a KiCad project.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the saved .kicad_pro project file"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": ["projectPath", "name"]
+    }
+  },
+  {
+    "name": "get_component_variant",
+    "title": "Get Component Variant",
+    "description": "Read a component's DNP and field overrides for an assembly variant.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the saved .kicad_pro project file"
+        },
+        "schematicPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the .kicad_sch containing the component"
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Component reference, e.g. R1"
+        },
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registered assembly variant name"
+        }
+      },
+      "required": ["projectPath", "schematicPath", "reference", "variant"]
+    }
+  },
+  {
+    "name": "set_component_variant",
+    "title": "Set Component Variant",
+    "description": "Set or remove a component's DNP and field overrides for an assembly variant.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the saved .kicad_pro project file"
+        },
+        "schematicPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the .kicad_sch containing the component"
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Component reference, e.g. R1"
+        },
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registered assembly variant name"
+        },
+        "dnp": {
+          "type": "boolean",
+          "description": "Override do-not-populate for this variant"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "null"]
+          },
+          "description": "Field overrides by name; null removes that field's override"
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "Remove all overrides for this component and variant"
+        }
+      },
+      "required": ["projectPath", "schematicPath", "reference", "variant"]
+    }
+  },
+  {
+    "name": "export_variant_bom",
+    "title": "Export Variant BOM",
+    "description": "Export the bill of materials for a named assembly variant.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the saved .kicad_pro project file"
+        },
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registered assembly variant name"
+        },
+        "outputPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path for the output CSV file"
+        },
+        "excludeDnp": {
+          "type": "boolean",
+          "description": "Exclude do-not-populate components from the BOM"
+        }
+      },
+      "required": ["projectPath", "variant", "outputPath"]
+    }
+  }
+]

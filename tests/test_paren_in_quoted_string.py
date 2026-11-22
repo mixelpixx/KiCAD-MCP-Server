@@ -196,6 +196,7 @@ def test_kicad_dru_loads_without_sexpdata() -> None:
     proc = subprocess.run(
         [sys.executable, "-c", probe, python_root],
         capture_output=True,
+        stdin=subprocess.DEVNULL,
         text=True,
         timeout=60,
     )

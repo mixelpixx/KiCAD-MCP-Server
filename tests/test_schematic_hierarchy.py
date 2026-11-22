@@ -425,6 +425,7 @@ class TestSheetProperties:
             capture_output=True,
             text=True,
             timeout=120,
+            stdin=subprocess.DEVNULL,
         )
         assert result.returncode == 0, result.stderr
         assert list(out_dir.glob("*.svg"))

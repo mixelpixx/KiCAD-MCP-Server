@@ -130,6 +130,30 @@ def test_dynamic_loader_finds_a_user_library_under_kicad_config_home(env, monkey
     assert found is not None and Path(found).name == "Mine.kicad_sym"
 
 
+def test_kicad_config_home_is_the_only_root_when_set(env, monkeypatch):
+    """KiCad reads only $KICAD_CONFIG_HOME when it is set. On Windows %APPDATA%\\kicad always exists,
+    so falling back to it let a newer version there win over the configured home (Tristan Lewis,
+    Windows 11 / KiCad 10.0.1, 2026-11-17)."""
+    conf = env["tmp"] / "kconf"
+    _user_tables(conf / "9.0", env["user_lib"])
+    appdata = env["tmp"] / "appdata"
+    other_lib = env["tmp"] / "otherlib"
+    (other_lib / "Other.pretty").mkdir(parents=True)
+    (other_lib / "Other.kicad_sym").write_text("(kicad_symbol_lib)\n", encoding="utf-8")
+    (appdata / "kicad" / "10.0").mkdir(parents=True)
+    (appdata / "kicad" / "10.0" / "sym-lib-table").write_text(
+        _sym_table([("Other", str(other_lib / "Other.kicad_sym"))]), encoding="utf-8"
+    )
+    monkeypatch.setenv("KICAD_CONFIG_HOME", str(conf))
+    monkeypatch.setenv("APPDATA", str(appdata))
+    from utils.platform_helper import PlatformHelper
+
+    roots = {p.parent for p in PlatformHelper.kicad_config_dirs()}
+    assert roots == {conf}
+    libs = SymbolLibraryManager().libraries
+    assert "Mine" in libs and "Other" not in libs
+
+
 def test_readers_honour_xdg_config_home(env, monkeypatch):
     xdg = env["tmp"] / "xdg"
     _user_tables(xdg / "kicad" / "10.0", env["user_lib"])

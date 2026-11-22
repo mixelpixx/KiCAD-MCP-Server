@@ -17,6 +17,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
 from commands.schematic_batch import SchematicBatchCommands  # noqa: E402
 from commands.wire_manager import WireManager  # noqa: E402
+from utils.kicad_cli import resolve_kicad_cli  # noqa: E402
+
+
+def _kicad_cli():
+    """kicad-cli (also found outside PATH, e.g. a Windows install), or None with a visible warning.
+
+    The netlist checks below are a second opinion on top of each test's own asserts. Without
+    kicad-cli they used to be skipped silently, so a run without it looked fully covered.
+    """
+    cli = resolve_kicad_cli()
+    if cli is None:
+        import warnings
+
+        warnings.warn("kicad-cli not found: netlist cross-check skipped")
+    return cli
+
 
 FONT = "(effects (font (size 1.27 1.27)))"
 LIB = f"""  (lib_symbols
@@ -248,11 +264,12 @@ def test_stub_puts_the_label_off_the_pin_and_keeps_it_connected(tmp_path):
     at = next(x for x in lbl if isinstance(x, list) and x[0] == sexpdata.Symbol("at"))
     assert (round(float(at[1]), 2), round(float(at[2]), 2)) == (96.19, 100.0)
     assert len(_items(f, "wire")) == 1
-    if shutil.which("kicad-cli"):
+    cli = _kicad_cli()
+    if cli:
         out = tmp_path / "n.net"
         subprocess.run(
             [
-                "kicad-cli",
+                cli,
                 "sch",
                 "export",
                 "netlist",
@@ -264,6 +281,7 @@ def test_stub_puts_the_label_off_the_pin_and_keeps_it_connected(tmp_path):
             ],
             capture_output=True,
             check=True,
+            stdin=subprocess.DEVNULL,
         )
         nets = sexpdata.loads(out.read_text())
         net_block = next(
@@ -293,12 +311,13 @@ def _netlist_members(tmp_path, sch):
     import shutil
     import subprocess
 
-    if not shutil.which("kicad-cli"):
+    cli = _kicad_cli()
+    if not cli:
         return None
     out = tmp_path / "renet.net"
     subprocess.run(
         [
-            "kicad-cli",
+            cli,
             "sch",
             "export",
             "netlist",
@@ -310,6 +329,7 @@ def _netlist_members(tmp_path, sch):
         ],
         capture_output=True,
         check=True,
+        stdin=subprocess.DEVNULL,
     )
     data = sexpdata.loads(out.read_text())
     block = next(x for x in data[1:] if isinstance(x, list) and x[0] == sexpdata.Symbol("nets"))

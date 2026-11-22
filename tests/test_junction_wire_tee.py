@@ -145,6 +145,7 @@ def _kicad_joins_r1_r2(sch: Path) -> bool:
         ],
         capture_output=True,
         check=True,
+        stdin=subprocess.DEVNULL,
     )
     root = sexpdata.loads(out.read_text())
     nets = next(x for x in root[1:] if isinstance(x, list) and x[0] == sexpdata.Symbol("nets"))

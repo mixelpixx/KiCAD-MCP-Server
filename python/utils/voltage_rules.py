@@ -406,7 +406,7 @@ def write_rules(dru_path: str, block: str) -> Dict[str, Any]:
     directory = os.path.dirname(dru_path) or "."
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".dru-", suffix=".kicad_dru")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
             f.write(new_text)
         os.replace(tmp, dru_path)
     except Exception:

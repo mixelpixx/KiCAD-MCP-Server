@@ -741,7 +741,9 @@ class DesignRuleCommands:
                 }
 
             # Create temporary JSON output file
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", newline="", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
@@ -773,6 +775,7 @@ class DesignRuleCommands:
                     capture_output=True,
                     text=True,
                     timeout=timeout_sec,
+                    stdin=subprocess.DEVNULL,
                 )
 
                 if result.returncode != 0:
@@ -822,7 +825,7 @@ class DesignRuleCommands:
                 violations_file = os.path.join(board_dir, f"{board_name}_drc_violations.json")
 
                 # Always save violations to JSON file (for large result sets)
-                with open(violations_file, "w", encoding="utf-8") as f:
+                with open(violations_file, "w", encoding="utf-8", newline="") as f:
                     json.dump(
                         {
                             "board": board_file,
@@ -853,7 +856,12 @@ class DesignRuleCommands:
                         *drc_flags,
                         board_file,
                     ]
-                    subprocess.run(cmd_report, capture_output=True, timeout=timeout_sec)
+                    subprocess.run(
+                        cmd_report,
+                        capture_output=True,
+                        timeout=timeout_sec,
+                        stdin=subprocess.DEVNULL,
+                    )
 
                 # Return summary only (not full violations list)
                 return {
@@ -913,6 +921,7 @@ class DesignRuleCommands:
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    stdin=subprocess.DEVNULL,
                 )
                 cls._refill_support[kicad_cli] = "--refill-zones" in (h.stdout or "") + (
                     h.stderr or ""

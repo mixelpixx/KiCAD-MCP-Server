@@ -453,6 +453,9 @@ try:
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
     from commands.validate_kicad_files import validate_schematic, validate_symbol_library
+    from commands.variant_bom import export_variant_bom
+    from commands.variant_components import get_component_variant, set_component_variant
+    from commands.variant_registry import create_variant, list_variants
     from commands.via_summary import ViaSummaryCommands
 
     logger.info("Successfully imported all command handlers")
@@ -713,6 +716,12 @@ class KiCADInterface(SchematicHandlersMixin):
             "batch_add_and_connect": self.batch_commands.batch_add_and_connect,
             "update_symbol_from_library": update_symbol_from_library,
             "add_library_symbol_property": add_library_symbol_property,
+            # Assembly variants operate on the supplied files, not the loaded board.
+            "list_variants": list_variants,
+            "create_variant": create_variant,
+            "get_component_variant": get_component_variant,
+            "set_component_variant": set_component_variant,
+            "export_variant_bom": export_variant_bom,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
@@ -1476,6 +1485,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "replace_instance_lib_ids",
         "replace_schematic_component",
         "rotate_schematic_component",
+        "set_component_variant",
         "set_schematic_component_property",
         "set_schematic_property_position",
         "set_schematic_rectangle",
@@ -3492,7 +3502,9 @@ class KiCADInterface(SchematicHandlersMixin):
                 schematic_path,
             ]
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode == 0:
                 return {"success": True, "outputPath": output_path, "format": fmt}
@@ -3591,7 +3603,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -3673,7 +3687,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -3752,7 +3768,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -3820,7 +3838,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -3875,7 +3895,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -3945,7 +3967,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4024,7 +4048,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4129,7 +4155,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4233,7 +4261,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4336,7 +4366,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4437,7 +4469,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4563,7 +4597,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(board_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4646,7 +4682,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4727,7 +4765,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4802,7 +4842,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4878,7 +4920,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -4950,7 +4994,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -5027,7 +5073,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -5082,7 +5130,9 @@ class KiCADInterface(SchematicHandlersMixin):
             cmd.append(schematic_path)
 
             logger.info(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode != 0:
                 return {
@@ -5138,7 +5188,9 @@ class KiCADInterface(SchematicHandlersMixin):
                     schematic_path,
                 ]
                 logger.info(f"Running: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -5350,7 +5402,7 @@ class KiCADInterface(SchematicHandlersMixin):
             if prompt_text:
                 prompt_filename = f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
                 prompt_file = logs_dir / prompt_filename
-                prompt_file.write_text(prompt_text, encoding="utf-8")
+                prompt_file.write_bytes(prompt_text.encode("utf-8"))
                 logger.info(f"Prompt saved: {prompt_file}")
 
             # Copy current MCP session log into logs/ before snapshotting
@@ -5375,7 +5427,7 @@ class KiCADInterface(SchematicHandlersMixin):
                 session_lines = all_lines[session_start:]
                 log_filename = f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
                 mcp_log_dest = logs_dir / log_filename
-                with open(mcp_log_dest, "w", encoding="utf-8") as f:
+                with open(mcp_log_dest, "w", encoding="utf-8", newline="") as f:
                     f.writelines(session_lines)
                 logger.info(f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)")
 
@@ -5503,6 +5555,7 @@ print("ok")
                     capture_output=True,
                     text=True,
                     timeout=60,
+                    stdin=subprocess.DEVNULL,
                 )
                 if result.returncode == 0 and "ok" in result.stdout:
                     # Reload board after subprocess modified it
