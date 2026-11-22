@@ -316,6 +316,7 @@ class KiCADServer {
         env: {
           ...process.env,
         },
+        windowsHide: true,
       });
 
       // Listen for process exit

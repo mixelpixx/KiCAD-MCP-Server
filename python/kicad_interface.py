@@ -249,6 +249,7 @@ from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
 from utils.project_settings_guard import preserve_project_settings
+from utils.subprocess_flags import windows_no_console_flags
 
 from utils import interactive_schematic
 
@@ -3538,7 +3539,12 @@ class KiCADInterface(SchematicHandlersMixin):
             ]
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode == 0:
@@ -3639,7 +3645,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -3723,7 +3734,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -3804,7 +3820,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -3874,7 +3895,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -3931,7 +3957,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4003,7 +4034,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4084,7 +4120,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4191,7 +4232,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4297,7 +4343,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4402,7 +4453,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4505,7 +4561,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4633,7 +4694,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4718,7 +4784,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4801,7 +4872,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4878,7 +4954,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -4956,7 +5037,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -5030,7 +5116,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -5109,7 +5200,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -5166,7 +5262,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
             logger.info(f"Running: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode != 0:
@@ -5224,7 +5325,12 @@ class KiCADInterface(SchematicHandlersMixin):
                 ]
                 logger.info(f"Running: {' '.join(cmd)}")
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
                 if result.returncode != 0:
@@ -5591,6 +5697,7 @@ print("ok")
                     text=True,
                     timeout=60,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 if result.returncode == 0 and "ok" in result.stdout:
                     # Reload board after subprocess modified it

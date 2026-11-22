@@ -33,6 +33,7 @@ from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
 from utils.skip_items import skip_items
+from utils.subprocess_flags import windows_no_console_flags
 from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
@@ -168,6 +169,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
             stdin=subprocess.DEVNULL,
+            creationflags=windows_no_console_flags(),
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -181,6 +183,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
             stdin=subprocess.DEVNULL,
+            creationflags=windows_no_console_flags(),
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -1387,7 +1390,12 @@ class SchematicHandlersMixin:
                 cmd.insert(-1, "--black-and-white")
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
 
             if result.returncode == 0:
@@ -1644,7 +1652,12 @@ class SchematicHandlersMixin:
                     schematic_path,
                 ]
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
                 if result.returncode != 0:
@@ -2550,7 +2563,12 @@ class SchematicHandlersMixin:
                     cmd.append("--black-and-white")
 
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
                 if result.returncode != 0:
@@ -2919,7 +2937,12 @@ class SchematicHandlersMixin:
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
                 # kicad-cli returns non-zero when ERC violations are found —
@@ -3544,7 +3567,12 @@ class SchematicHandlersMixin:
                 schematic_path,
             ]
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
             if result.returncode != 0:
                 logger.warning(
@@ -4203,7 +4231,12 @@ class SchematicHandlersMixin:
                     schematic_path,
                 ]
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
                 if result.returncode != 0:

@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from commands.symbol_creator import symbol_lib_header
 from utils.sexpr_format import escape_sexpr_string
+from utils.subprocess_flags import windows_no_console_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -1828,6 +1829,7 @@ class EagleCommands:
                 text=True,
                 timeout=120,
                 stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
             if result.returncode != 0 or not os.path.exists(report_path):
                 return None
@@ -1865,6 +1867,7 @@ class EagleCommands:
                 text=True,
                 timeout=60,
                 stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
             if result.returncode == 0 and os.path.exists(pcb_out):
                 return True, "PCB imported successfully"

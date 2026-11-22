@@ -34,6 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from utils.platform_helper import PlatformHelper
 from utils.seven_zip import resolve_7z, seven_zip_not_found_message
+from utils.subprocess_flags import windows_no_console_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -539,6 +540,7 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
                     url,
                 ],
                 stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             ).returncode
             == 0
         )
@@ -577,6 +579,7 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
         capture_output=True,
         text=True,
         stdin=subprocess.DEVNULL,
+        creationflags=windows_no_console_flags(),
     )
     if result.returncode != 0:
         raise RuntimeError(f"7z extraction failed: {result.stderr[:300]}")

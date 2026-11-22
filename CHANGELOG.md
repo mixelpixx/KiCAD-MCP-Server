@@ -167,6 +167,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Windows: no console window flashes when the server runs a console program**
+  (#577). The server is started by an MCP client with piped stdio, so neither
+  the Node process nor the Python worker owns a console, and Windows opened a
+  new, visible console window for every child process — most visibly
+  `kicad-cli` during `run_drc`, `run_erc` and the export tools. Python
+  subprocess calls now pass `CREATE_NO_WINDOW` through the new
+  `utils.subprocess_flags.windows_no_console_flags` helper (a no-op off
+  Windows, guarded by a source-scan test), and the Node `spawn`/`exec`/
+  `execSync` calls pass `windowsHide: true`.
 - **IPC tools that rewrite a footprint warn that KiCad drops data from it**
   (#569). `move_component`, `rotate_component`, `set_footprint_type` and
   `add_component_3d_model` send each footprint back to KiCad with

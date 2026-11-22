@@ -14,6 +14,8 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import List, Optional
 
+from utils.subprocess_flags import windows_no_console_flags
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,6 +98,7 @@ class KiCADProcessManager:
                     capture_output=True,
                     text=True,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 if result.returncode == 0:
                     return True
@@ -105,6 +108,7 @@ class KiCADProcessManager:
                     capture_output=True,
                     text=True,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 # Double-check it's not our own process
                 if result.returncode == 0:
@@ -116,6 +120,7 @@ class KiCADProcessManager:
                                 capture_output=True,
                                 text=True,
                                 stdin=subprocess.DEVNULL,
+                                creationflags=windows_no_console_flags(),
                             )
                             if "kicad_interface.py" not in cmdline.stdout:
                                 return True
@@ -129,6 +134,7 @@ class KiCADProcessManager:
                     capture_output=True,
                     text=True,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 return result.returncode == 0
 
@@ -179,6 +185,7 @@ class KiCADProcessManager:
                 errors="ignore" if system == "Windows" else None,
                 timeout=5 if system == "Windows" else None,
                 stdin=subprocess.DEVNULL,
+                creationflags=windows_no_console_flags(),
             )
             if result.returncode == 0:
                 exe_path = result.stdout.strip().split("\n")[0]
@@ -259,7 +266,7 @@ class KiCADProcessManager:
                 # Windows: Use CREATE_NEW_PROCESS_GROUP to detach
                 subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    creationflags=windows_no_console_flags(subprocess.CREATE_NEW_PROCESS_GROUP),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
@@ -272,6 +279,7 @@ class KiCADProcessManager:
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
             # Wait for process to start
@@ -307,7 +315,11 @@ class KiCADProcessManager:
         try:
             if system in ["Linux", "Darwin"]:
                 result = subprocess.run(
-                    ["ps", "aux"], capture_output=True, text=True, stdin=subprocess.DEVNULL
+                    ["ps", "aux"],
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 for line in result.stdout.split("\n"):
                     # Only match actual KiCAD binaries, not our MCP server processes
