@@ -7,6 +7,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { reportsAppliedWork } from "./failure-as-error.js";
 
+/** The references a batch placed, in order, each once (a multi-unit part
+ * places one entry per unit under one reference). */
+export function placedReferences(added: { reference?: string }[]): string {
+  return [...new Set(added.map((a) => a.reference).filter(Boolean))].join(", ");
+}
+
 export function registerSchematicBatchTools(server: McpServer, callKicadScript: Function) {
   // Add many components at once
   server.tool(
@@ -18,7 +24,14 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
         .array(
           z.object({
             symbol: z.string().describe("'Library:SymbolName' (e.g., Device:R)"),
-            reference: z.string().describe("Reference designator (e.g., R1)"),
+            reference: z
+              .string()
+              .optional()
+              .describe(
+                "Reference designator (e.g., R1). Required except for power symbols: for " +
+                  'power:GND, … omit it or pass "#PWR?" to use the next free #PWRnn in the ' +
+                  "project (power:PWR_FLAG: #FLGnn); the reply names the number chosen.",
+              ),
             value: z.string().optional(),
             footprint: z.string().optional(),
             position: z.object({ x: z.number(), y: z.number() }).optional(),
@@ -48,6 +61,9 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
       if (r.success === false && r.message)
         return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [`Added ${r.added_count} component(s), ${r.error_count} error(s).`];
+      // Power symbols sent without a reference come back as #PWRnn/#FLGnn,
+      // so name every placed reference: the caller needs them for wiring.
+      if (r.added?.length) lines.push(`  placed: ${placedReferences(r.added)}`);
       for (const e of r.errors || []) lines.push(`  ✗ ${e.reference} (${e.symbol}): ${e.error}`);
       return { content: [{ type: "text", text: lines.join("\n") }] };
     },
@@ -264,7 +280,13 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
         .array(
           z.object({
             symbol: z.string(),
-            reference: z.string(),
+            reference: z
+              .string()
+              .optional()
+              .describe(
+                "Reference designator. Optional only for power symbols, which get the next " +
+                  "free #PWRnn (PWR_FLAG: #FLGnn); their nets follow the number chosen.",
+              ),
             value: z.string().optional(),
             footprint: z.string().optional(),
             position: z.object({ x: z.number(), y: z.number() }).optional(),
@@ -295,6 +317,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
       if (r.success === false && r.message)
         return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [r.message];
+      if (r.added?.length) lines.push(`  placed: ${placedReferences(r.added)}`);
       for (const e of r.errors || []) lines.push(`  ✗ add ${e.reference}: ${e.error}`);
       for (const f of r.failed_connections || [])
         lines.push(`  ✗ connect ${f.ref}/${f.pin}: ${f.reason}`);
