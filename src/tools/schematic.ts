@@ -1325,7 +1325,9 @@ edit_schematic_component and set its value to an empty string.`,
   // Delete wire from schematic
   server.tool(
     "delete_schematic_wire",
-    "Remove a wire from the schematic by start and end coordinates.",
+    "Remove one wire segment from the schematic by its start and end coordinates. Both stored end points must lie within 0.5 mm of start and end (in either order). " +
+      "A run that KiCad split into several segments at a junction or a T is deleted one segment at a time. " +
+      "On a miss, the reply lists the wire segments at each point with their stored coordinates.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),

@@ -106,6 +106,7 @@ def test_kicad_honours_the_child_sheet_no_connect(tmp_path):
         subprocess.run(
             ["kicad-cli", "sch", "erc", "--format", "json", "-o", str(rep), str(root)],
             capture_output=True,
+            stdin=subprocess.DEVNULL,
         )
         d = json.loads(rep.read_text())
         return sum(

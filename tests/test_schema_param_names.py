@@ -82,7 +82,6 @@ KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
 # TypeScript tools that call a Python command with no entry in command_routes:
 # every call answers "unknown command".
 KNOWN_UNROUTED: Set[str] = {
-    "add_component_annotation",
     "group_components",
 }
 

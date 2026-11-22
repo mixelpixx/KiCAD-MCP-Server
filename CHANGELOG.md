@@ -167,6 +167,55 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **IPC tools that rewrite a footprint warn that KiCad drops data from it**
+  (#569). `move_component`, `rotate_component`, `set_footprint_type` and
+  `add_component_3d_model` send each footprint back to KiCad with
+  `UpdateItems`, and KiCad rebuilds it from the message, losing what the
+  message does not carry: the `(units ...)` map before KiCad 10.0.8
+  (kicad#25859), pad fabrication properties such as a heatsink pad, and the
+  stroke type `default`, which becomes `solid` (kicad#26112). The next save
+  wrote the loss to the file with no sign of it. The loss happens inside
+  KiCad, so the server cannot restore it; these replies now carry a
+  `warnings` entry naming the rewritten footprints and what can be lost, and
+  name the units map only on the KiCad versions that drop it. The version is
+  read from the running KiCad: the IPC backend's reported version is the one
+  kicad-python was built against.
+
+- **Windows: files keep LF line endings, `KICAD_CONFIG_HOME` is the only
+  config root when set, the board file keeps its on-disk name, and no child
+  process gets the server's stdin.** Found on Windows 11 / KiCad 10.0.1 by
+  Tristan Lewis.
+  - Text-mode writes (`open`, `os.fdopen`, `NamedTemporaryFile`) pass
+    `newline=""`, so an edit no longer turns a whole `.kicad_sch`,
+    `.kicad_dru` or `.kicad_pro` into CRLF. `tests/test_lf_writes.py` scans
+    the source for all three forms.
+  - Every `subprocess` call under `python/` passes `stdin=subprocess.DEVNULL`.
+    The Python half reads its JSON-RPC commands on stdin, so a child that
+    inherits it can read the server's input, and on Windows it fails with
+    WinError 6 (netlist export, DRC, via audit, the Eagle import check).
+    `tests/test_subprocess_stdin.py` keeps it that way.
+  - Tests that use `kicad-cli` as an oracle find it the way the server does
+    (PATH, then the install directories) and warn when it is missing, instead
+    of skipping silently.
+
+- **`delete_schematic_wire` says why a delete missed** (#521). A delete removes
+  one wire segment whose stored end points are both within 0.5 mm of `start`
+  and `end`; a run that KiCad split at a junction or a T is not matched as a
+  whole, and the reply was a bare "No matching wire found". It now lists the
+  segments that end at or pass through each point, with their stored
+  coordinates (`wiresAtStart`, `wiresAtEnd`), and the tool description
+  documents the tolerance and the per-segment match.
+  `get_schematic_pin_locations` rounds to 0.0001 mm, so `439.42` no longer
+  reads as `439.41999999999996`.
+
+- **`set_voltage_clearance_rules` loads in Codex CLI** (#566). Its `[min, max]`
+  voltages (`classes[].voltage`, `otherNetsVoltage`) were zod tuples, which
+  reach `tools/list` as a JSON Schema `items` array with one schema per
+  position. Codex CLI reads `items` as a single schema, so it left the tool out
+  of every turn and logged "failed to build tool spec: invalid type: map,
+  expected a string". They are now arrays of two numbers (`minItems` and
+  `maxItems` 2), which accept the same input.
+
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's
   via drill: `makeVIA` stores that one as undefined, and it then resolves
@@ -375,6 +424,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   JSON-RPC schema declares both parameters too. Node clients get the zod
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
+
+- **`add_component_annotation` is removed** (#407). It was registered but no
+  Python command answered it, so every call failed with "unknown command",
+  and KiCad has no per-component annotation it could map to. Text on the
+  board is `add_board_text`. The tool count is now 256.
 
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,

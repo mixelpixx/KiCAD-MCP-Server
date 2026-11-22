@@ -172,6 +172,7 @@ class TestRealPcbnew:
                 check=True,
                 capture_output=True,
                 timeout=120,
+                stdin=subprocess.DEVNULL,
             )
             coords = []
             for drl in sorted(out_dir.glob("*.drl")):

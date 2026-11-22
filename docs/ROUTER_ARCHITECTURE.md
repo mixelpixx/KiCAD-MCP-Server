@@ -105,7 +105,7 @@ Setup and configuration operations.
 - `get_board_2d_view` - Get 2D visualization
 - `launch_kicad_ui` - Launch KiCAD UI
 
-#### 2. `component` - Advanced Component Operations (8 tools)
+#### 2. `component` - Advanced Component Operations (7 tools)
 
 Beyond basic placement.
 
@@ -116,7 +116,6 @@ Beyond basic placement.
 - `edit_component` - Edit component properties
 - `find_component` - Find component by reference/value
 - `get_component_properties` - Get component properties
-- `add_component_annotation` - Add component annotation
 - `group_components` - Group components together
 - `replace_component` - Alias of `edit_component`: swap footprint and value
 

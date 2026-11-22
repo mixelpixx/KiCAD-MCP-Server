@@ -92,13 +92,19 @@ class KiCADProcessManager:
                 # Check for actual pcbnew/kicad binaries (not python scripts)
                 # Use exact process name matching to avoid matching our own kicad_interface.py
                 result = subprocess.run(
-                    ["pgrep", "-x", "pcbnew|kicad"], capture_output=True, text=True
+                    ["pgrep", "-x", "pcbnew|kicad"],
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
                 )
                 if result.returncode == 0:
                     return True
                 # Also check with -f for full path matching, but exclude our script
                 result = subprocess.run(
-                    ["pgrep", "-f", "/pcbnew|/kicad"], capture_output=True, text=True
+                    ["pgrep", "-f", "/pcbnew|/kicad"],
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
                 )
                 # Double-check it's not our own process
                 if result.returncode == 0:
@@ -106,7 +112,10 @@ class KiCADProcessManager:
                     for pid in pids:
                         try:
                             cmdline = subprocess.run(
-                                ["ps", "-p", pid, "-o", "command="], capture_output=True, text=True
+                                ["ps", "-p", pid, "-o", "command="],
+                                capture_output=True,
+                                text=True,
+                                stdin=subprocess.DEVNULL,
                             )
                             if "kicad_interface.py" not in cmdline.stdout:
                                 return True
@@ -116,7 +125,10 @@ class KiCADProcessManager:
 
             elif system == "Darwin":  # macOS
                 result = subprocess.run(
-                    ["pgrep", "-f", "KiCad|pcbnew"], capture_output=True, text=True
+                    ["pgrep", "-f", "KiCad|pcbnew"],
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
                 )
                 return result.returncode == 0
 
@@ -166,6 +178,7 @@ class KiCADProcessManager:
                 encoding="mbcs" if system == "Windows" else None,
                 errors="ignore" if system == "Windows" else None,
                 timeout=5 if system == "Windows" else None,
+                stdin=subprocess.DEVNULL,
             )
             if result.returncode == 0:
                 exe_path = result.stdout.strip().split("\n")[0]
@@ -249,6 +262,7 @@ class KiCADProcessManager:
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
                 )
             else:
                 # Unix: Use nohup or start in background
@@ -257,6 +271,7 @@ class KiCADProcessManager:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
+                    stdin=subprocess.DEVNULL,
                 )
 
             # Wait for process to start
@@ -291,7 +306,9 @@ class KiCADProcessManager:
 
         try:
             if system in ["Linux", "Darwin"]:
-                result = subprocess.run(["ps", "aux"], capture_output=True, text=True)
+                result = subprocess.run(
+                    ["ps", "aux"], capture_output=True, text=True, stdin=subprocess.DEVNULL
+                )
                 for line in result.stdout.split("\n"):
                     # Only match actual KiCAD binaries, not our MCP server processes
                     if (

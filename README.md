@@ -43,8 +43,8 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 257 tools registered, every one of them indexed for keyword discovery
-- 257 tools across 20 categories with JSON Schema validation
+- 261 tools registered, every one of them indexed for keyword discovery
+- 261 tools across 21 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - Optional toolboxes: start with a 37-tool core and open the rest by category,
   to save context and stay under client tool limits
@@ -745,10 +745,10 @@ instead of guessing:
 
 - **33 core tools** that `search_tools` surfaces first, covering the
   operations nearly every session needs
-- **20 categories** (board, component, export, drc, schematic, library,
+- **21 categories** (board, component, export, drc, schematic, library,
   symbol_library, symbol_pins, schematic_hierarchy, schematic_layout,
   schematic_batch, routing, autoroute, validation, parts-registry, digikey,
-  gui-driver, footprint, import, jlcpcb)
+  gui-driver, footprint, import, jlcpcb, variants)
 - **Discovery tools**:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
@@ -876,11 +876,13 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **257 tools** are also indexed into 20 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **261 tools** are also indexed into 21 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
 
 The lists below are a curated tour of the most useful tools, not the full set.
-For the complete, generated reference of all 257 tools -- including how each one
+For the complete, generated reference of all 261 tools -- including how each one
 is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
+For a worked example of per-variant DNP, field overrides and BOM export, see
+[KiCad 10 design variants](docs/DESIGN_VARIANTS.md).
 
 ### Project Management (12 tools)
 
@@ -911,7 +913,7 @@ is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 - `list_graphics` / `update_graphic` / `delete_graphic` - Inspect and edit drawing items
 - `import_svg_logo` - Import SVG file as PCB silkscreen polygons
 
-### Component Management (28 tools)
+### Component Management (27 tools)
 
 - `place_component` - Place single component with footprint
 - `move_component` - Reposition existing component
@@ -920,7 +922,6 @@ is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 - `edit_component` - Modify component properties
 - `find_component` - Search by reference or value
 - `get_component_properties` - Query component details
-- `add_component_annotation` - Add annotation/comment
 - `group_components` - Group multiple components
 - `replace_component` - Swap a footprint and value (alias of `edit_component`)
 - `get_component_pads` - Get all pad information
@@ -1867,8 +1868,8 @@ How many Basic parts are available?
 
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (244), Resources (23)
-- **Tool discovery:** keyword search catalogue indexing 184 tools in 17 categories
+- **Capabilities:** Tools (261), Resources (23)
+- **Tool discovery:** keyword search catalogue indexing 261 tools in 21 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -2018,7 +2019,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (244 tools):**
+**Working Features (261 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)

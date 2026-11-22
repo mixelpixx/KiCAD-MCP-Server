@@ -112,6 +112,22 @@ describe("parseToolboxSetting", () => {
 });
 
 describe("toolboxes over MCP", () => {
+  it("discovers assembly variants in core mode and exposes them after opening the toolbox", async () => {
+    const session = await connect("core");
+    const names = [
+      "create_variant",
+      "export_variant_bom",
+      "get_component_variant",
+      "list_variants",
+      "set_component_variant",
+    ];
+    const reply = await session.call("search_tools", { query: "variant" });
+    expect(reply.body.matches.map((m: { tool: string }) => m.tool).sort()).toEqual(names);
+    expect((await session.names()).filter((name) => name.includes("variant"))).toEqual([]);
+    await session.call("open_toolbox", { toolboxes: ["variants"] });
+    expect((await session.names()).filter((name) => name.includes("variant"))).toEqual(names);
+  });
+
   it("by default every tool is visible and the toolbox controls are not", async () => {
     const session = await connect();
     const names = await session.names();

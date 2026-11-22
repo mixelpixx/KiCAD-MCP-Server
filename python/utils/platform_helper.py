@@ -370,8 +370,13 @@ class PlatformHelper:
         (#425).
         """
         home = Path.home()
+        if os.environ.get("KICAD_CONFIG_HOME"):
+            # KiCad itself reads only $KICAD_CONFIG_HOME when it is set. Falling back to the
+            # platform default as well would find %APPDATA%\kicad, which always exists on
+            # Windows, and a newer version there would win over the configured home.
+            config_root = Path(os.environ["KICAD_CONFIG_HOME"])
+            return [config_root / version for version in KICAD_CONFIG_VERSIONS]
         roots = [
-            Path(os.environ["KICAD_CONFIG_HOME"]) if os.environ.get("KICAD_CONFIG_HOME") else None,
             Path(os.environ["APPDATA"]) / "kicad" if os.environ.get("APPDATA") else None,
             home / "AppData" / "Roaming" / "kicad",
             (

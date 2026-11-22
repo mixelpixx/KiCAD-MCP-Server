@@ -429,7 +429,9 @@ class TestKicadCliRoundTrip:
         compared equal (seen on 10.0.5 and 10.0.6), while a KiCad 10 fixture is
         refused outright by KiCad 9. Compare like with like.
         """
-        out = subprocess.run([self.cli, "version"], capture_output=True, text=True)
+        out = subprocess.run(
+            [self.cli, "version"], capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
         m = re.match(r"\s*(\d+)\.", out.stdout or "")
         major = int(m.group(1)) if m else 9
         return _project_v10(tmp_path, stem) if major >= 10 else _project(tmp_path, stem)
@@ -456,6 +458,7 @@ class TestKicadCliRoundTrip:
             capture_output=True,
             text=True,
             cwd=str(tmp_path),
+            stdin=subprocess.DEVNULL,
         )
         assert "Failed to load" not in (erc.stdout + erc.stderr)
 
@@ -465,6 +468,7 @@ class TestKicadCliRoundTrip:
             capture_output=True,
             text=True,
             cwd=str(tmp_path),
+            stdin=subprocess.DEVNULL,
         )
         assert up.returncode == 0, up.stdout + up.stderr
         after = _placed_block(sch)

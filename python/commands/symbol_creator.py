@@ -254,7 +254,7 @@ class SymbolCreator:
         else:
             lib_content += "\n" + symbol_block + "\n)\n"
 
-        lib_path.write_text(lib_content, encoding="utf-8")
+        lib_path.write_bytes(lib_content.encode("utf-8"))
         logger.info(f"Created symbol '{name}' in {lib_path} ({len(pins)} pins)")
         _invalidate_symbol_caches()
 
@@ -280,7 +280,7 @@ class SymbolCreator:
             return {"success": False, "error": f'Symbol "{name}" not found in {library_path}'}
 
         new_content = self._remove_symbol(content, name)
-        lib_path.write_text(new_content, encoding="utf-8")
+        lib_path.write_bytes(new_content.encode("utf-8"))
         _invalidate_symbol_caches()
         return {"success": True, "library_path": str(lib_path), "deleted": name}
 
@@ -385,7 +385,7 @@ class SymbolCreator:
         else:
             content += "\n" + new_entry + "\n)\n"
 
-        table_path.write_text(content, encoding="utf-8")
+        table_path.write_bytes(content.encode("utf-8"))
         logger.info(f"Registered symbol library '{name}' in {table_path}")
         _invalidate_symbol_caches()
 

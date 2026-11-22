@@ -271,6 +271,7 @@ class TestRenderNeutral:
                 check=True,
                 capture_output=True,
                 timeout=120,
+                stdin=subprocess.DEVNULL,
             )
             svgs = sorted(out_dir.glob("*.svg"))
             assert len(svgs) == 1

@@ -47,6 +47,7 @@ def merge_preserved_keys(
         never mutates it through the pcbnew model).
       * Top-level keys present in ``before`` but dropped by the save are
         re-added.
+      * An explicit schematic variant registry is preserved across PCB saves.
       * Every other value from ``after`` (e.g. ``board.design_settings``
         updated by set_design_rules) is kept.
 
@@ -59,6 +60,12 @@ def merge_preserved_keys(
     if "net_settings" in before and merged.get("net_settings") != before["net_settings"]:
         merged["net_settings"] = before["net_settings"]
         changed = True
+
+    old_sch, new_sch = before.get("schematic"), after.get("schematic")
+    if isinstance(old_sch, dict) and "variants" in old_sch and isinstance(new_sch, dict):
+        if new_sch.get("variants") != old_sch["variants"]:
+            merged["schematic"] = {**new_sch, "variants": old_sch["variants"]}
+            changed = True
 
     for key, value in before.items():
         if key not in merged:
@@ -77,17 +84,23 @@ def _read_json(path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _write_json_atomic(path: str, data: Dict[str, Any]) -> None:
+def require_unlocked_files(*targets: Path) -> None:
+    for target in targets:
+        if target.with_name("~" + target.name + ".lck").exists():
+            raise ValueError(f"Close KiCad before editing: {target.name} has an editor lock")
+
+
+def write_project_json_atomic(path: str, data: Dict[str, Any]) -> None:
     directory = os.path.dirname(path) or "."
     fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".prosettings-", suffix=".kicad_pro")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             # No sort_keys: #220 made the .kicad_pro byte-faithful to KiCad's
             # own output, and alphabetising every key would undo that on the
             # first restore. json.load preserves insertion order, and
             # merge_preserved_keys builds from `after`, so the file keeps
             # KiCad's ordering with any restored keys appended.
-            json.dump(data, handle, indent=2)
+            json.dump(data, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
         os.replace(tmp_path, path)
     except Exception:
@@ -119,7 +132,7 @@ def preserve_project_settings(board_path: Optional[str]):
                 after = _read_json(pro_path)
                 if after is None:
                     # Save produced no readable project file; restore snapshot.
-                    _write_json_atomic(pro_path, before)
+                    write_project_json_atomic(pro_path, before)
                     logger.warning(
                         "Restored %s verbatim: unreadable after board save",
                         pro_path,
@@ -127,7 +140,7 @@ def preserve_project_settings(board_path: Optional[str]):
                 else:
                     merged, changed = merge_preserved_keys(before, after)
                     if changed:
-                        _write_json_atomic(pro_path, merged)
+                        write_project_json_atomic(pro_path, merged)
                         logger.info(
                             "Restored preserved .kicad_pro settings "
                             "(net_settings/dropped keys) in %s",
