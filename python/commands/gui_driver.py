@@ -173,6 +173,51 @@ def ensure_helper_installed(
     return {"installed": installed, "current": current}
 
 
+def remove_helper_installed(
+    plugin_dirs: Optional[List[Path]] = None,
+) -> Dict[str, Any]:
+    """Remove the deployed helper from every KiCad version's plugin tree.
+
+    Deletes ONLY ``<plugins-dir>/<HELPER_IDENTIFIER>/`` — the exact dir
+    :func:`ensure_helper_installed` writes. Anything else in the plugin tree
+    is left alone, and a file (or link) wearing the identifier name is
+    reported, not deleted: it is not ours to remove.
+
+    Returns ``{"removed": [...], "not_present": [...], "failed": [...]}``.
+    A dir that cannot be removed is reported in ``failed`` and never raises —
+    removal must not break the graceful path the way install doesn't.
+    """
+    if plugin_dirs is None:
+        plugin_dirs = kicad_plugin_dirs()
+    removed: List[str] = []
+    not_present: List[str] = []
+    failed: List[str] = []
+    if not HELPER_IDENTIFIER:
+        # An empty identifier would resolve to the plugins dir itself.
+        return {
+            "removed": removed,
+            "not_present": not_present,
+            "failed": [str(p) for p in plugin_dirs],
+        }
+    for plugins_dir in plugin_dirs:
+        target = plugins_dir / HELPER_IDENTIFIER
+        if not target.exists() and not target.is_symlink():
+            not_present.append(str(target))
+            continue
+        if target.is_symlink() or not target.is_dir():
+            logger.warning("gui-driver helper removal skipped %s: not a directory", target)
+            failed.append(str(target))
+            continue
+        try:
+            shutil.rmtree(target)
+        except OSError as exc:
+            logger.warning("gui-driver helper removal from %s failed: %s", target, exc)
+            failed.append(str(target))
+            continue
+        removed.append(str(target))
+    return {"removed": removed, "not_present": not_present, "failed": failed}
+
+
 # Seed list of destructive menu labels (docs/gui_destructive_seed.txt,
 # regex-derived from the live pcbnew 215-item enumeration; embedded here so the
 # installed wheel doesn't depend on docs/). Matching is on NORMALIZED labels —
@@ -397,6 +442,42 @@ class GuiDriverCommands:
             "next": (
                 "Set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment, then restart KiCad "
                 "(or Tools > External Plugins > Refresh Plugins) to open the token-gated channel."
+            ),
+        }
+
+    def uninstall_gui_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove the deployed in-KiCad helper from the user's KiCad plugin tree.
+
+        The mirror of install_gui_driver: deletes
+        ``<kicad-data>/<ver>/3rdparty/plugins/<HELPER_IDENTIFIER>/`` for every
+        KiCad version found, and leaves other plugins alone. A helper already
+        loaded in a running KiCad keeps running until KiCad restarts (or
+        Tools > External Plugins > Refresh Plugins) — removal takes effect on
+        the next start. The per-session token file is left in place: it is
+        rewritten whenever the helper next starts, and is inert without it.
+        """
+        try:
+            removed = remove_helper_installed()
+        except Exception as exc:  # noqa: BLE001 — surface as a failed envelope, never raise
+            return {"success": False, "error": f"gui-driver helper uninstall failed: {exc}"}
+        if removed["failed"]:
+            return {
+                "success": False,
+                "error": (
+                    "gui-driver helper uninstall failed for: " + ", ".join(removed["failed"])
+                ),
+                "removed": removed["removed"],
+                "not_present": removed["not_present"],
+                "failed": removed["failed"],
+            }
+        return {
+            "success": True,
+            "removed": removed["removed"],
+            "not_present": removed["not_present"],
+            "failed": removed["failed"],
+            "next": (
+                "Restart KiCad (or Tools > External Plugins > Refresh Plugins): a helper "
+                "already loaded in a running KiCad keeps running until then."
             ),
         }
 

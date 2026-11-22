@@ -6,7 +6,8 @@
  * enumerate and activate GUI chrome — menus, AUI toolbars, plugin buttons,
  * dialogs — plus a Linux AT-SPI fast-path. Every tool degrades gracefully
  * (returns {success:false} instantly) when the helper isn't reachable; the
- * helper is deployed explicitly with install_gui_driver. Destructive menu names
+ * helper is deployed explicitly with install_gui_driver (removed with
+ * uninstall_gui_driver). Destructive menu names
  * are advisory-flagged with a "⚠ " prefix by kicad_gui_tree — never gated.
  */
 
@@ -161,6 +162,13 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
     "Deploy the in-KiCad GUI-driver helper plugin into the user's KiCad plugin tree (opt-in). The connect path no longer installs it as a side effect. After install, set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment and restart (or Refresh Plugins) to open the token-gated control channel.",
     {},
     async () => asText(await callKicadScript("install_gui_driver", {})),
+  );
+
+  server.tool(
+    "uninstall_gui_driver",
+    "Remove the in-KiCad GUI-driver helper plugin from the user's KiCad plugin tree (the mirror of install_gui_driver). Deletes the deployed <identifier> directory for every KiCad version found; other plugins are left alone. A helper already loaded in a running KiCad keeps running until KiCad restarts (or Refresh Plugins). The per-session token file is left in place.",
+    {},
+    async () => asText(await callKicadScript("uninstall_gui_driver", {})),
   );
 
   logger.info("GUI-driver tools registered");

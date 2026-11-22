@@ -38,6 +38,7 @@ from commands.gui_driver import (  # noqa: E402
     flag_destructive_tree,
     is_destructive,
     kicad_plugin_dirs,
+    remove_helper_installed,
     resolve_name,
 )
 
@@ -685,6 +686,110 @@ class TestEnsureHelperInstalled:
         assert out == {"installed": [], "current": []}
 
 
+class TestRemoveHelperInstalled:
+    """remove_helper_installed: the uninstall half of the deploy/remove pair —
+    it deletes ONLY the <HELPER_IDENTIFIER> dir the installer writes."""
+
+    def _plugins_dir(self, tmp_path):
+        d = tmp_path / "9.0" / "3rdparty" / "plugins"
+        d.mkdir(parents=True)
+        return d
+
+    def test_removes_deployed_helper_only(self, tmp_path):
+        plugins = self._plugins_dir(tmp_path)
+        ensure_helper_installed(plugin_dirs=[plugins])
+        neighbour = plugins / "some.other.plugin"
+        neighbour.mkdir()
+        (neighbour / "plugin.py").write_text("# not ours\n")
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        target = plugins / HELPER_IDENTIFIER
+        assert out["removed"] == [str(target)]
+        assert out["not_present"] == []
+        assert out["failed"] == []
+        assert not target.exists()
+        assert (neighbour / "plugin.py").is_file()  # other plugins untouched
+
+    def test_nothing_installed_is_a_noop(self, tmp_path):
+        plugins = self._plugins_dir(tmp_path)
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["not_present"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert out["failed"] == []
+
+    def test_multiple_versions_all_removed(self, tmp_path):
+        dirs = []
+        for ver in ("8.0", "9.0"):
+            d = tmp_path / ver / "3rdparty" / "plugins"
+            d.mkdir(parents=True)
+            dirs.append(d)
+            ensure_helper_installed(plugin_dirs=[d])
+        out = remove_helper_installed(plugin_dirs=dirs)
+        assert len(out["removed"]) == 2
+        assert all(not (d / HELPER_IDENTIFIER).exists() for d in dirs)
+
+    def test_rmtree_failure_is_reported_not_raised(self, tmp_path, monkeypatch):
+        plugins = self._plugins_dir(tmp_path)
+        ensure_helper_installed(plugin_dirs=[plugins])
+
+        def _boom(path, *args, **kwargs):
+            raise OSError("disk on fire")
+
+        monkeypatch.setattr(gui_driver.shutil, "rmtree", _boom)
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert (plugins / HELPER_IDENTIFIER).is_dir()  # left in place
+
+    def test_file_wearing_the_identifier_is_left_alone(self, tmp_path):
+        plugins = self._plugins_dir(tmp_path)
+        decoy = plugins / HELPER_IDENTIFIER
+        decoy.write_text("not a directory\n")
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == [str(decoy)]
+        assert decoy.is_file()
+
+
+class TestUninstallTool:
+    """uninstall_gui_driver: the tool-level mirror of install_gui_driver."""
+
+    def test_uninstall_removes_and_reports(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        ensure_helper_installed(plugin_dirs=[plugins])
+        out = GuiDriverCommands().uninstall_gui_driver({})
+        assert out["success"] is True
+        assert out["removed"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert out["failed"] == []
+        assert not (plugins / HELPER_IDENTIFIER).exists()
+        assert "Restart KiCad" in out["next"]
+
+    def test_uninstall_when_nothing_installed(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        out = GuiDriverCommands().uninstall_gui_driver({})
+        assert out["success"] is True
+        assert out["removed"] == []
+        assert out["not_present"] == [str(plugins / HELPER_IDENTIFIER)]
+
+    def test_uninstall_failure_is_a_failed_envelope(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        ensure_helper_installed(plugin_dirs=[plugins])
+
+        def _boom(path, *args, **kwargs):
+            raise OSError("disk on fire")
+
+        monkeypatch.setattr(gui_driver.shutil, "rmtree", _boom)
+        out = GuiDriverCommands().uninstall_gui_driver({})
+        assert out["success"] is False
+        assert out["failed"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert "failed" in out["error"]
+
+
 class TestGracefulFailWithSelfInstall:
     """The REQUIRED contract: _call still returns success:False instantly on
     connect failure — self-install only improves the message, never raises."""
@@ -753,6 +858,7 @@ class TestGracefulFailWithSelfInstall:
 
 GUI_TOOL_NAMES = [
     "install_gui_driver",
+    "uninstall_gui_driver",
     "kicad_gui_tree",
     "kicad_gui_click",
     "kicad_run_action_plugin",

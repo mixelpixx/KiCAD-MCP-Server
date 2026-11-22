@@ -4315,6 +4315,19 @@ GUI_DRIVER_TOOLS = [
         ),
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "uninstall_gui_driver",
+        "title": "Uninstall the GUI-driver helper",
+        "description": (
+            "Remove the deployed in-KiCad GUI-driver helper plugin from the user's "
+            "KiCad plugin tree (the mirror of install_gui_driver). Deletes the "
+            "<identifier> directory for every KiCad version found; other plugins "
+            "are left alone. A helper already loaded in a running KiCad keeps "
+            "running until KiCad restarts (or Tools > External Plugins > Refresh "
+            "Plugins). The per-session token file is left in place."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 # Read-only geometry for a PDN or EMC review. One entry per tool so a

@@ -43,6 +43,7 @@ const MUST_STAY_WRITE = [
   "remove_library_table_entry",
   "launch_kicad_ui",
   "install_gui_driver",
+  "uninstall_gui_driver",
   "kicad_gui_click",
   "refill_zones",
 ];

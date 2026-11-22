@@ -661,6 +661,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # generic scriptable surface, destructive names are advisory-flagged
             # with a "⚠ " prefix — never gated). See commands/gui_driver.py.
             "install_gui_driver": self.gui_driver_commands.install_gui_driver,
+            "uninstall_gui_driver": self.gui_driver_commands.uninstall_gui_driver,
             "kicad_gui_tree": self.gui_driver_commands.kicad_gui_tree,
             "kicad_gui_click": self.gui_driver_commands.kicad_gui_click,
             "kicad_run_action_plugin": self.gui_driver_commands.kicad_run_action_plugin,

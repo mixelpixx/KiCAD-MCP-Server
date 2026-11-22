@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.9.0
-**Tools registered on the server:** 261
-**Tools indexed for keyword discovery:** 261 in 21 categories
-**Last updated:** 2026-11-21
+**Tools registered on the server:** 262
+**Tools indexed for keyword discovery:** 262 in 21 categories
+**Last updated:** 2026-11-22
 
 ## How to read this document
 
@@ -503,7 +503,7 @@ _Source: `src/tools/digikey-api.ts`_
 
 ---
 
-## gui-driver.ts (11 tools)
+## gui-driver.ts (12 tools)
 
 _Source: `src/tools/gui-driver.ts`_
 
@@ -520,6 +520,7 @@ _Source: `src/tools/gui-driver.ts`_
 | `kicad_gui_tree_atspi`         | Backend B: dump KiCad's accessible widget tree (role + name) from the Linux a11y bus — zero in-KiCad code.                    | `gui-driver` |
 | `kicad_gui_click_atspi`        | Backend B: activate the first accessible node matching `name` (and optional role) via do_action.                              | `gui-driver` |
 | `install_gui_driver`           | Deploy the in-KiCad GUI-driver helper plugin into the user's KiCad plugin tree (opt-in).                                      | `gui-driver` |
+| `uninstall_gui_driver`         | Remove the in-KiCad GUI-driver helper plugin from the user's KiCad plugin tree (the mirror of install_gui_driver).            | `gui-driver` |
 
 ---
 
@@ -564,13 +565,13 @@ _Source: `src/tools/toolboxes.ts`_
 | `ui.ts`                  | KiCad UI and Backend                   | 3       |
 | `router.ts`              | Tool Discovery                         | 3       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
-| `gui-driver.ts`          | gui-driver.ts                          | 11      |
+| `gui-driver.ts`          | gui-driver.ts                          | 12      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **261** |
+| **Total**                |                                        | **262** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 261 of the 261 registered tools.
+These are the categories `search_tools` searches. They cover 262 of the 262 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -594,7 +595,7 @@ These are the categories `search_tools` searches. They cover 261 of the 261 regi
 | `jlcpcb`                   | 7             |
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
-| `gui-driver`               | 11            |
-| **Indexed total**          | **261**       |
+| `gui-driver`               | 12            |
+| **Indexed total**          | **262**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **261**       |
+| **Registered total**       | **262**       |

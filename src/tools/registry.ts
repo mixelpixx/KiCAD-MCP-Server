@@ -367,9 +367,10 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "gui-driver",
     description:
-      "GUI-driver: drive KiCad's live GUI (menus, toolbars, dialogs, plugins) over a token-gated localhost helper. Opt-in — deploy with install_gui_driver and enable via KICAD_GUI_DRIVER_ENABLE. Destructive items are advisory-flagged, not gated.",
+      "GUI-driver: drive KiCad's live GUI (menus, toolbars, dialogs, plugins) over a token-gated localhost helper. Opt-in — deploy with install_gui_driver (remove with uninstall_gui_driver) and enable via KICAD_GUI_DRIVER_ENABLE. Destructive items are advisory-flagged, not gated.",
     tools: [
       "install_gui_driver",
+      "uninstall_gui_driver",
       "kicad_gui_tree",
       "kicad_gui_click",
       "kicad_run_action_plugin",

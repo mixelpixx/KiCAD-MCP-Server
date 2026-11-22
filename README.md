@@ -43,8 +43,8 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 261 tools registered, every one of them indexed for keyword discovery
-- 261 tools across 21 categories with JSON Schema validation
+- 262 tools registered, every one of them indexed for keyword discovery
+- 262 tools across 21 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - Optional toolboxes: start with a 37-tool core and open the rest by category,
   to save context and stay under client tool limits
@@ -277,10 +277,14 @@ disables only the schematic tools that need it (#389, @AmirF194).
 
 ### GUI driver, opt-in
 
-Eleven tools drive KiCad's live GUI: menus, toolbars, dialogs and
+Twelve tools drive KiCad's live GUI: menus, toolbars, dialogs and
 action-plugin buttons (#333, @rossvonfange). Nothing is installed until you run
 `install_gui_driver`, and the helper listens only when
 `KICAD_GUI_DRIVER_ENABLE=1` is set, on 127.0.0.1, with a per-session token.
+Run `uninstall_gui_driver` to remove the deployed helper (restart KiCad for a
+loaded helper to go away), or delete
+`<kicad-data>/<ver>/3rdparty/plugins/com_github_rossvonfange_kicad-gui-driver/`
+by hand.
 
 ### KiCad 10, IPC and Freerouting
 
@@ -303,7 +307,7 @@ sheet: about ten times faster on KiCad's demo projects, with identical results
 
 ### New tools
 
-- **GUI driver**: the eleven tools above.
+- **GUI driver**: the twelve tools above.
 - **Digi-Key**: `digikey_search_parts`, `digikey_check_library_availability`,
   `digikey_test_connection` (#368, @karu2003).
 - **`set_net_color`** (#375, @JMcordobamendez).
@@ -876,10 +880,10 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **261 tools** are also indexed into 21 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **262 tools** are also indexed into 21 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
 
 The lists below are a curated tour of the most useful tools, not the full set.
-For the complete, generated reference of all 261 tools -- including how each one
+For the complete, generated reference of all 262 tools -- including how each one
 is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 For a worked example of per-variant DNP, field overrides and BOM export, see
 [KiCad 10 design variants](docs/DESIGN_VARIANTS.md).
@@ -1868,8 +1872,8 @@ How many Basic parts are available?
 
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (261), Resources (23)
-- **Tool discovery:** keyword search catalogue indexing 261 tools in 21 categories
+- **Capabilities:** Tools (262), Resources (23)
+- **Tool discovery:** keyword search catalogue indexing 262 tools in 21 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -2019,7 +2023,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (261 tools):**
+**Working Features (262 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
