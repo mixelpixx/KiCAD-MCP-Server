@@ -167,6 +167,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`validate_schematic` names items nested inside `(sheet_instances ...)` (#524).**
+  A symbol pasted into the block -- the reproduction is a copy of a power
+  symbol hand-edited in -- is syntactically balanced, so the structure scan
+  passed it, and kicad-cli refused the file with a bare
+  `Failed to load schematic` and no position. `validate_schematic` now reports
+  each such item as an error with its line number, and warns when a placed
+  symbol's Reference property matches none of the references on the instance
+  paths its own project's hierarchy reaches for it -- only the current
+  project's `(project ...)` block counts, and only on paths the hierarchy
+  reaches, so a sheet used twice (a reference per use by design) or another
+  project's instance block no longer warns. Both checks have regression
+  tests: the nested-symbol fixture is built exactly as the maintainer
+  reproduced it, and a stale-Reference fixture covers the warning.
+
 - **`add_schematic_component` auto-picks the next free `#PWR` reference for power symbols (#524).**
   Placing a power symbol (`power:GND`, …) without a reference, or with the
   `#PWR?` placeholder, wrote the literal placeholder into the schematic,
