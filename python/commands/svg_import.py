@@ -610,7 +610,7 @@ def import_svg_to_pcb(
 
         new_content = pcb_content[:last_paren] + insert_block + pcb_content[last_paren:]
 
-        with open(pcb_path, "w", encoding="utf-8") as f:
+        with open(pcb_path, "w", encoding="utf-8", newline="") as f:
             f.write(new_content)
 
         logger.info(f"SVG logo import: wrote {len(gr_lines)} polygons to {pcb_path}")

@@ -181,6 +181,55 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the optional reference exists only so power symbols can omit it. An
   explicit reference other than the placeholder behaves exactly as before.
 
+- **IPC tools that rewrite a footprint warn that KiCad drops data from it**
+  (#569). `move_component`, `rotate_component`, `set_footprint_type` and
+  `add_component_3d_model` send each footprint back to KiCad with
+  `UpdateItems`, and KiCad rebuilds it from the message, losing what the
+  message does not carry: the `(units ...)` map before KiCad 10.0.8
+  (kicad#25859), pad fabrication properties such as a heatsink pad, and the
+  stroke type `default`, which becomes `solid` (kicad#26112). The next save
+  wrote the loss to the file with no sign of it. The loss happens inside
+  KiCad, so the server cannot restore it; these replies now carry a
+  `warnings` entry naming the rewritten footprints and what can be lost, and
+  name the units map only on the KiCad versions that drop it. The version is
+  read from the running KiCad: the IPC backend's reported version is the one
+  kicad-python was built against.
+
+- **Windows: files keep LF line endings, `KICAD_CONFIG_HOME` is the only
+  config root when set, the board file keeps its on-disk name, and no child
+  process gets the server's stdin.** Found on Windows 11 / KiCad 10.0.1 by
+  Tristan Lewis.
+  - Text-mode writes (`open`, `os.fdopen`, `NamedTemporaryFile`) pass
+    `newline=""`, so an edit no longer turns a whole `.kicad_sch`,
+    `.kicad_dru` or `.kicad_pro` into CRLF. `tests/test_lf_writes.py` scans
+    the source for all three forms.
+  - Every `subprocess` call under `python/` passes `stdin=subprocess.DEVNULL`.
+    The Python half reads its JSON-RPC commands on stdin, so a child that
+    inherits it can read the server's input, and on Windows it fails with
+    WinError 6 (netlist export, DRC, via audit, the Eagle import check).
+    `tests/test_subprocess_stdin.py` keeps it that way.
+  - Tests that use `kicad-cli` as an oracle find it the way the server does
+    (PATH, then the install directories) and warn when it is missing, instead
+    of skipping silently.
+
+- **`delete_schematic_wire` says why a delete missed** (#521). A delete removes
+  one wire segment whose stored end points are both within 0.5 mm of `start`
+  and `end`; a run that KiCad split at a junction or a T is not matched as a
+  whole, and the reply was a bare "No matching wire found". It now lists the
+  segments that end at or pass through each point, with their stored
+  coordinates (`wiresAtStart`, `wiresAtEnd`), and the tool description
+  documents the tolerance and the per-segment match.
+  `get_schematic_pin_locations` rounds to 0.0001 mm, so `439.42` no longer
+  reads as `439.41999999999996`.
+
+- **`set_voltage_clearance_rules` loads in Codex CLI** (#566). Its `[min, max]`
+  voltages (`classes[].voltage`, `otherNetsVoltage`) were zod tuples, which
+  reach `tools/list` as a JSON Schema `items` array with one schema per
+  position. Codex CLI reads `items` as a single schema, so it left the tool out
+  of every turn and logged "failed to build tool spec: invalid type: map,
+  expected a string". They are now arrays of two numbers (`minItems` and
+  `maxItems` 2), which accept the same input.
+
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's
   via drill: `makeVIA` stores that one as undefined, and it then resolves
@@ -194,6 +243,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
   in `viaDrillsRestored`. Vias KiCad kept right, vias that were on the board
   before the import, and diameters that two padstacks give different drills
   are left alone.
+
+- **`set_schematic_property_position`, `batch_set_schematic_property_positions`,
+  and `autoplace_schematic_fields` handle symbol rotation and mirror correctly
+  (#520).** KiCad stores a field's angle and justification in the symbol's own
+  frame, swapping horizontal and vertical on 90°/270° symbols and flipping
+  justification on 180° or mirrored symbols. Previously `angle` was written
+  verbatim (and defaulted to `0` when omitted, turning horizontal labels on
+  rotated symbols vertical), and `autoplace_schematic_fields` always wrote
+  stored angle `0` (and crashed on a missing `text_height` reference).
+  `set_schematic_property_position` and `batch_set_schematic_property_positions`
+  now interpret `angle` as a sheet-absolute drawn angle (`0` = horizontal,
+  `90` = vertical) and convert it into the symbol's local frame, preserve the
+  existing stored angle when `angle` is omitted (removing the Zod `.default(0)`
+  override too), and return `stored_angle`, `drawn_angle`, `effective_justify`,
+  `stored_justify`, `symbol_rotation`, and `symbol_mirror`.
+  `autoplace_schematic_fields` now converts its horizontal target (`0°`) per
+  symbol rotation so 90°/270° parts store `90` and render horizontally.
 
 - **`delete_trace` deletes from the live KiCad board in realtime mode (#553).**
   Its IPC handler called the SWIG `delete_trace`, which removed the track from
@@ -252,6 +318,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
   flags). Wire endpoints meeting `bus_entry` anchors or `no_connect` flags
   were not included in connection points. Both `bus_entry` and `no_connect`
   endpoints are now counted as connection anchors.
+
+- **Schematic text edits preserve line endings and are atomic.** Component,
+  label, and wire edits now avoid truncated files after an interrupted write
+  and avoid rewriting LF schematics as CRLF on Windows.
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
@@ -369,6 +439,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
 
+- **`add_component_annotation` is removed** (#407). It was registered but no
+  Python command answered it, so every call failed with "unknown command",
+  and KiCad has no per-component annotation it could map to. Text on the
+  board is `add_board_text`. The tool count is now 256.
+
+- **`edit_component` is auto-saved like other board edits.** It was missing
+  from `_BOARD_MUTATING_COMMANDS`, so a footprint swap or value change (also
+  through `replace_component`) reported success but reached the board file
+  only on an explicit `save_project`, unlike `place_component` or
+  `delete_component`.
+
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,
   the JSON-RPC schema declares `library` and `footprint`, and the handler
@@ -378,6 +459,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   found now says "Footprint not found: ..." instead of failing with a Python
   error, and a `Library:Footprint` name in another library than `library` is
   refused.
+
+- **`group_components` works: it creates a PCB group** (#407). The tool was
+  registered but no Python command answered it, so every call failed with
+  "unknown command". It now creates a `PCB_GROUP` named `groupName` holding
+  the given footprints, and the board is auto-saved like other board edits.
+  Nothing is created when a reference isn't found (the reply names it) or a
+  footprint is already in a group, since KiCad allows only one (an unnamed
+  group is named by its uuid).
 
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and
@@ -392,6 +481,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `search_term`, so a JSON-RPC client that sent the required `query` searched
   for `*` and got the first 20 footprints, whatever it asked for. `pattern`
   still takes precedence, then `query`, then `search_term`.
+
+- **`replace_component` works: it is now an alias of `edit_component`**
+  (#407). The tool was registered but no Python command answered it, so every
+  call failed with "unknown command". It now sends `edit_component`: the
+  footprint is `newFootprint`, or `newComponentId` when that is in
+  `Library:Footprint` form, and `newValue` becomes the value. Any other
+  `newComponentId` without `newFootprint` is refused with a message instead
+  of being guessed at. A blank `newFootprint` or `newValue` counts as absent.
 
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a

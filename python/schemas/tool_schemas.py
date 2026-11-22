@@ -10,6 +10,8 @@ Each tool includes:
 - outputSchema: Optional JSON Schema for return values (structured content)
 """
 
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 from utils.duplicate_strategies import DEFAULT_DUPLICATE_STRATEGIES, DUPLICATE_STRATEGIES
@@ -4395,6 +4397,11 @@ ANALYSIS_TOOLS = [
     },
 ]
 
+# The worker's Python-direct tools/list must expose the same arguments as the MCP server.
+VARIANT_TOOLS = json.loads(
+    Path(__file__).with_name("variant_tools.json").read_text(encoding="utf-8")
+)
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -4412,6 +4419,7 @@ for tool in (
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
     + ANALYSIS_TOOLS
+    + VARIANT_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

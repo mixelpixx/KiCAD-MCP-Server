@@ -242,7 +242,7 @@ class SchematicLintCommands:
 
             changed = src != original
             if changed and not dry_run:
-                with open(schematic_path, "w", encoding="utf-8") as f:
+                with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                     f.write(src)
 
             message_parts = []

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addZoneToCopperPour,
   positionFileToExportPos,
+  replaceComponentToEditComponent,
   vrmlToExport3dCli,
 } from "../src/tools/tool-aliases.js";
 
@@ -96,4 +97,66 @@ describe("export_vrml -> export_3d_cli", () => {
       "error",
     );
   });
+});
+
+describe("replace_component -> edit_component", () => {
+  it("uses newFootprint and newValue", () => {
+    expect(
+      replaceComponentToEditComponent({
+        reference: "R5",
+        newComponentId: "anything",
+        newFootprint: "Resistor_SMD:R_0805_2012Metric",
+        newValue: "4k7",
+      }),
+    ).toEqual({
+      params: { reference: "R5", footprint: "Resistor_SMD:R_0805_2012Metric", value: "4k7" },
+    });
+  });
+
+  it("uses newComponentId as the footprint when it is Library:Footprint", () => {
+    expect(
+      replaceComponentToEditComponent({
+        reference: "C1",
+        newComponentId: "Capacitor_SMD:C_0603_1608Metric",
+      }),
+    ).toEqual({ params: { reference: "C1", footprint: "Capacitor_SMD:C_0603_1608Metric" } });
+  });
+
+  it.each(["", "   "])("treats a blank newFootprint %j as absent", (blank) => {
+    expect(
+      replaceComponentToEditComponent({
+        reference: "R1",
+        newComponentId: "Resistor_SMD:R_0805_2012Metric",
+        newFootprint: blank,
+      }),
+    ).toEqual({ params: { reference: "R1", footprint: "Resistor_SMD:R_0805_2012Metric" } });
+  });
+
+  it("refuses a blank newFootprint when newComponentId is not Library:Footprint", () => {
+    const r = replaceComponentToEditComponent({
+      reference: "R1",
+      newComponentId: "R_0805",
+      newFootprint: " ",
+    });
+    expect(r).toHaveProperty("error");
+  });
+
+  it.each(["", "  "])("drops a blank newValue %j instead of sending it", (blank) => {
+    expect(
+      replaceComponentToEditComponent({
+        reference: "R1",
+        newComponentId: "Resistor_SMD:R_0805_2012Metric",
+        newValue: blank,
+      }),
+    ).toEqual({ params: { reference: "R1", footprint: "Resistor_SMD:R_0805_2012Metric" } });
+  });
+
+  it.each(["R_0603_1608Metric", "Device:R:extra", ":R_0603", "Resistor_SMD:", ""])(
+    "refuses newComponentId %j without newFootprint",
+    (id) => {
+      const r = replaceComponentToEditComponent({ reference: "R5", newComponentId: id });
+      expect(r).toHaveProperty("error");
+      expect((r as { error: string }).error).toContain("Library:Footprint");
+    },
+  );
 });

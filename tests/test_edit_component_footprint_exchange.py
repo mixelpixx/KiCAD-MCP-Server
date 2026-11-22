@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.stub_pcbnew]
 
 import pcbnew as _pcbnew_stub  # noqa: E402 (must come after sys.path insert)
 

@@ -231,6 +231,7 @@ def _drc_clearance_violations(cli: str, board, board_path: Path) -> list:
         [cli, "pcb", "drc", "--format", "json", "-o", str(report), str(board_path)],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     return [v for v in json.loads(report.read_text())["violations"] if v["type"] == "clearance"]
 
@@ -411,3 +412,61 @@ def test_run_drc_reports_unconnected_pads_with_real_kicad_cli(tmp_path: Path) ->
         "TP1",
         "TP2",
     ]
+
+
+def _placed_footprint(pcbnew, board, ref, x_mm):
+    fp = pcbnew.FOOTPRINT(board)
+    fp.SetReference(ref)
+    board.Add(fp)
+    fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x_mm), pcbnew.FromMM(10)))
+    return fp
+
+
+def test_group_components_survives_save_and_reload_with_real_pcbnew(tmp_path: Path) -> None:
+    """#407: group_components makes a real PCB group that KiCad writes and reads back."""
+    import pcbnew
+    from commands.component import ComponentCommands
+
+    board = pcbnew.BOARD()
+    for ref, x in (("R1", 10), ("R2", 20), ("R3", 30)):
+        _placed_footprint(pcbnew, board, ref, x)
+
+    commands = ComponentCommands(board=board)
+    result = commands.group_components({"references": ["R1", "R2"], "groupName": "Input filter"})
+    assert result["success"] is True, result
+    assert result["uuid"]
+
+    # A footprint that is already grouped is refused, naming its group.
+    refused = commands.group_components({"references": ["R2", "R3"], "groupName": "Other"})
+    assert refused["success"] is False, refused
+    assert "R2" in refused["message"] and "Input filter" in refused["message"]
+
+    path = tmp_path / "grouped.kicad_pcb"
+    pcbnew.SaveBoard(str(path), board)
+    saved = path.read_text(encoding="utf-8")
+    assert saved.count("(group ") == 1 and '"Input filter"' in saved
+
+    reloaded = pcbnew.LoadBoard(str(path))
+    parents = {fp.GetReference(): fp.GetParentGroup() for fp in reloaded.GetFootprints()}
+    assert parents["R1"] is not None and parents["R1"].GetName() == "Input filter"
+    assert parents["R2"] is not None and parents["R2"].GetName() == "Input filter"
+    assert parents["R3"] is None
+
+
+def test_group_components_names_an_unnamed_group_by_uuid_with_real_pcbnew() -> None:
+    """An already-grouped footprint whose group has no name is reported by the group's uuid."""
+    import pcbnew
+    from commands.component import ComponentCommands
+
+    board = pcbnew.BOARD()
+    fp = _placed_footprint(pcbnew, board, "R1", 10)
+    unnamed = pcbnew.PCB_GROUP(board)
+    board.Add(unnamed)
+    unnamed.AddItem(fp)
+
+    result = ComponentCommands(board=board).group_components(
+        {"references": ["R1"], "groupName": "G"}
+    )
+    assert result["success"] is False, result
+    assert "(in '')" not in result["message"]
+    assert unnamed.m_Uuid.AsString() in result["message"]

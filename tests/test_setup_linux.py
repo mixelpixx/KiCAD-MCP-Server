@@ -25,6 +25,7 @@ def setup_repo(tmp_path):
         [sys.executable, "-m", "venv", "--without-pip", str(repo / "venv")],
         check=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
     )
     python = repo / "venv/bin/python"
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
@@ -35,6 +36,7 @@ def setup_repo(tmp_path):
             [str(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
             env=env,
             text=True,
+            stdin=subprocess.DEVNULL,
         ).strip()
     )
     system = tmp_path / "system packages"
@@ -73,6 +75,7 @@ def run_setup(setup_repo, *args):
         capture_output=True,
         text=True,
         timeout=30,
+        stdin=subprocess.DEVNULL,
     )
 
 
@@ -93,6 +96,7 @@ def test_generated_environment_keeps_venv_packages_first(setup_repo):
         env={**env, **fragment["env"]},
         check=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
     )
 
 

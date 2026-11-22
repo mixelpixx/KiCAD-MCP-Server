@@ -346,6 +346,7 @@ def _parity(board_path: Path):
         ],
         capture_output=True,
         check=True,
+        stdin=subprocess.DEVNULL,
     )
     return json.loads(rep.read_text()).get("schematic_parity", [])
 

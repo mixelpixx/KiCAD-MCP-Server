@@ -21,7 +21,7 @@ import platform
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
 from utils.project_settings_guard import preserve_project_settings
@@ -222,6 +222,51 @@ def _set_orientation_keep_models(fp: Any, angle: Any) -> None:
             defn.add_item(model)
 
 
+# KiCad's IPC ``UpdateItems`` rebuilds a footprint from the message the client
+# sends, and that message does not carry everything the footprint holds (#569):
+# - the ``(units ...)`` pad-to-unit map, kicad#25859, fixed in KiCad 10.0.8;
+# - pad fabrication properties such as a heatsink pad (the ``Pad`` message has no
+#   field for them) and the graphic stroke type ``default``, which comes back as
+#   ``solid``, kicad#26112, open as of 2026-11-21.
+# The loss is inside KiCad, so the server cannot restore it; it can only say so.
+_UNITS_MAP_FIXED_IN = (10, 0, 8)
+_MAX_LISTED_REFERENCES = 10
+
+
+def footprint_update_loss_warning(
+    version: Optional[Tuple[int, int, int]], references: List[str]
+) -> Optional[str]:
+    """Warning for a reply whose IPC request rewrote these footprints (#569).
+
+    ``version`` is the running KiCad's (major, minor, patch), or None when it is
+    unknown; the ``(units ...)`` loss is mentioned only for KiCad 10 before
+    10.0.8, or when the version is unknown.
+    """
+    if not references:
+        return None
+    listed = ", ".join(references[:_MAX_LISTED_REFERENCES])
+    if len(references) > _MAX_LISTED_REFERENCES:
+        listed += f" and {len(references) - _MAX_LISTED_REFERENCES} more"
+    lost = []
+    if version is None:
+        lost.append(
+            "on KiCad 10 before 10.0.8, the (units ...) pad-to-unit map (KiCad issue 25859)"
+        )
+    elif (10, 0, 0) <= version < _UNITS_MAP_FIXED_IN:
+        lost.append("the (units ...) pad-to-unit map (KiCad issue 25859, fixed in 10.0.8)")
+    lost.append(
+        "pad fabrication properties such as a heatsink pad, and the graphic stroke "
+        "type 'default', which becomes 'solid' (KiCad issue 26112)"
+    )
+    return (
+        f"KiCad rewrote these footprints over IPC and can drop data from them: {listed}. "
+        f"Reported losses: {'; '.join(lost)}. The loss reaches the board file on the "
+        "next save, by this server or in KiCad. Check these footprints before saving, "
+        "or make this change with the board closed in KiCad, so the file backend "
+        "edits it and keeps everything."
+    )
+
+
 class IPCBackend(KiCADBackend):
     """
     KiCAD IPC API backend for real-time UI synchronization.
@@ -237,6 +282,7 @@ class IPCBackend(KiCADBackend):
         self._kicad = None
         self._connected = False
         self._version: Optional[str] = None
+        self._kicad_version: Optional[Tuple[int, int, int]] = None
         self._on_change_callbacks: List[Callable] = []
 
     def connect(self, socket_path: Optional[str] = None) -> bool:
@@ -281,6 +327,7 @@ class IPCBackend(KiCADBackend):
                     logger.debug(f"Trying socket path: {path or 'auto-detect'}")
                     kicad, elapsed = self._open_with_timeout(KiCad, path, IPC_CONNECT_TIMEOUT_S)
                     self._kicad = kicad
+                    self._kicad_version = None
                     logger.info(f"Connected via socket: {path or 'auto-detected'} ({elapsed:.2f}s)")
                     break
                 except Exception as e:
@@ -374,6 +421,7 @@ class IPCBackend(KiCADBackend):
             except Exception as e:
                 logger.debug(f"Error closing IPC socket during disconnect: {e}")
             self._kicad = None
+            self._kicad_version = None
             self._connected = False
             logger.info("Disconnected from KiCAD IPC")
 
@@ -392,6 +440,21 @@ class IPCBackend(KiCADBackend):
     def get_version(self) -> str:
         """Get KiCAD version."""
         return self._version or "unknown"
+
+    def running_kicad_version(self) -> Optional[Tuple[int, int, int]]:
+        """(major, minor, patch) of the KiCad this backend is connected to.
+
+        ``get_version`` reports the API version kicad-python was built against,
+        which is not the running KiCad. This asks KiCad itself, and caches the
+        answer for the connection. None when it cannot be read.
+        """
+        if self._kicad_version is None and self._kicad is not None:
+            try:
+                v = self._kicad.get_version()
+                self._kicad_version = (int(v.major), int(v.minor), int(v.patch))
+            except Exception as e:
+                logger.debug(f"Could not read the running KiCad version: {e}")
+        return self._kicad_version
 
     def get_open_board_path(self) -> Optional[str]:
         """Path of the .kicad_pcb currently open in the live KiCad GUI, if any.

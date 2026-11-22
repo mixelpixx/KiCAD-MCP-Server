@@ -16,6 +16,7 @@ firing KiCad actions, dialog scraping, screenshots.
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import sys
 import types
@@ -338,6 +339,37 @@ def tok_helper(monkeypatch, tmp_path):
         sys.modules.pop(mod, None)
 
 
+@pytest.fixture()
+def listener_helper(monkeypatch, tmp_path):
+    """Import the real listener without starting it, so a test can choose the
+    idle timeout and connection cap before ``start()`` runs. Stops it afterwards."""
+    monkeypatch.setenv("KICAD_GUI_DRIVER_TOKEN_FILE", str(tmp_path / "tok"))
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "gui_driver_plugin"))
+    for mod in ("plugins", "plugins.listener", "plugins.driver"):
+        sys.modules.pop(mod, None)
+    fake = types.SimpleNamespace()
+    fake.full_tree = lambda frame=None: {"menus": [], "toolbars": []}
+    sys.modules["plugins.driver"] = fake
+    import plugins  # noqa: F401 — opt-in __init__ does NOT auto-start here
+
+    setattr(sys.modules["plugins"], "driver", fake)
+    from plugins import listener
+
+    listener.stop()
+
+    def _start(**kwargs):
+        kwargs.setdefault("token", "s3cret-token")
+        port = listener.start(port=0, executor=lambda fn, timeout=None: fn(), **kwargs)
+        assert port
+        return port
+
+    yield types.SimpleNamespace(start=_start, listener=listener, token="s3cret-token")
+
+    listener.stop()
+    for mod in ("plugins", "plugins.listener", "plugins.driver"):
+        sys.modules.pop(mod, None)
+
+
 class TestSessionToken:
     """The token-gated channel only accepts the caller holding the minted secret."""
 
@@ -482,6 +514,52 @@ class TestListenerHardening:
     def test_screenshot_without_path_still_uses_a_temp_file(self, helper):
         out = GuiDriverCommands().kicad_gui_screenshot({})
         assert out["success"] is True
+
+    def test_idle_connection_is_closed_after_the_timeout(self, listener_helper):
+        port = listener_helper.start(idle_timeout=0.25)
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as conn:
+            conn.settimeout(5)
+            assert conn.recv(1) == b""
+
+    def test_connection_cap_refuses_an_extra_connection(self, listener_helper):
+        port = listener_helper.start(max_connections=1)
+        first = socket.create_connection(("127.0.0.1", port), timeout=5)
+        try:
+            second = socket.create_connection(("127.0.0.1", port), timeout=5)
+            second.settimeout(5)
+            refusal = json.loads(second.makefile("rb").readline())
+            second.close()
+            assert refusal["ok"] is False
+            assert "too many" in refusal["error"]
+
+            # the connection already inside the cap is still served
+            first.sendall(
+                (json.dumps({"cmd": "ping", "token": listener_helper.token}) + "\n").encode()
+            )
+            response = json.loads(first.makefile("rb").readline())
+            assert response["ok"] is True and response["result"]["pong"] is True
+        finally:
+            first.close()
+
+    def test_wrong_token_is_logged_without_the_presented_value(self, listener_helper, caplog):
+        port = listener_helper.start()
+        caplog.set_level(logging.WARNING, logger="plugins.listener")
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as conn:
+            conn.sendall((json.dumps({"cmd": "ping", "token": "not-the-secret"}) + "\n").encode())
+            response = json.loads(conn.makefile("rb").readline())
+        assert response["ok"] is False and "unauthorized" in response["error"]
+        warnings = [r for r in caplog.records if r.name == "plugins.listener"]
+        assert any("invalid" in r.getMessage() and "token" in r.getMessage() for r in warnings)
+        assert "not-the-secret" not in caplog.text
+        assert listener_helper.token not in caplog.text
+
+    def test_start_registers_an_exit_hook(self, listener_helper, monkeypatch):
+        registered = []
+        monkeypatch.setattr(
+            listener_helper.listener.atexit, "register", lambda fn: registered.append(fn)
+        )
+        listener_helper.start()
+        assert listener_helper.listener.stop in registered
 
 
 class TestInstallOptIn:

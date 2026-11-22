@@ -202,7 +202,7 @@ def lint_offgrid(
             directory = os.path.dirname(path) or "."
             fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".lintgrid-", suffix=".kicad_sch")
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
                     f.write(new_text)
                 os.replace(tmp_path, path)
             except Exception:

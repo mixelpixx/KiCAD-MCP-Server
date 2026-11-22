@@ -157,6 +157,6 @@ class TestResolvedBinaryRuns:
         exe = _real_7z()
         if not exe or not Path(exe).is_file():
             pytest.skip("no 7-Zip installed on this machine")
-        out = subprocess.run([exe], capture_output=True, text=True)
+        out = subprocess.run([exe], capture_output=True, text=True, stdin=subprocess.DEVNULL)
         # 7-Zip prints its version banner mentioning "7-Zip" on stdout.
         assert "7-Zip" in (out.stdout + out.stderr)

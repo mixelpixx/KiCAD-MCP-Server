@@ -34,6 +34,9 @@ pcbnew_mock = sys.modules["pcbnew"]
 # ---------------------------------------------------------------------------
 
 
+pytestmark = pytest.mark.stub_pcbnew
+
+
 @pytest.fixture(autouse=True)
 def reset_pcbnew_mock() -> Any:
     """Reset pcbnew mock before each test."""

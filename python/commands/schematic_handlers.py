@@ -223,6 +223,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -235,6 +236,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", str(out_path)],
             capture_output=True,
             timeout=60,
+            stdin=subprocess.DEVNULL,
         )
         if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
@@ -578,7 +580,7 @@ class SchematicHandlersMixin:
                     trim_start -= 1
                 content = content[:trim_start] + content[b_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             deleted_count = len(blocks_to_delete)
@@ -741,7 +743,7 @@ class SchematicHandlersMixin:
             if doomed_indices:
                 for i in reversed(doomed_indices):
                     del sch_data[i]
-                with open(sch_file, "w", encoding="utf-8") as f:
+                with open(sch_file, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
                 logger.info(
                     "Deleted %d dangling label(s) at removed pin positions",
@@ -1038,7 +1040,7 @@ class SchematicHandlersMixin:
 
             content = content[:block_start] + block_text + content[block_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             changes: Dict[str, Any] = {
@@ -1472,7 +1474,9 @@ class SchematicHandlersMixin:
             if params.get("blackAndWhite"):
                 cmd.insert(-1, "--black-and-white")
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
 
             if result.returncode == 0:
                 return {"success": True, "file": {"path": output_path}}
@@ -1673,7 +1677,9 @@ class SchematicHandlersMixin:
 
             result = {}
             for pin_num, coords in all_pins.items():
-                entry = {"x": coords[0], "y": coords[1]}
+                # Rounded to KiCad's schematic resolution (0.0001 mm), so the values read
+                # the same as the file: 439.42, not 439.41999999999996 (#521).
+                entry = {"x": round(coords[0], 4), "y": round(coords[1], 4)}
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
                     entry["angle"] = (
@@ -1725,7 +1731,9 @@ class SchematicHandlersMixin:
                     "--no-background-color",
                     schematic_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -2220,7 +2228,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2319,7 +2327,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2397,8 +2405,7 @@ class SchematicHandlersMixin:
             deleted = WireManager.delete_wire(Path(schematic_path), start_point, end_point)
             if deleted:
                 return {"success": True}
-            else:
-                return {"success": False, "message": "No matching wire found"}
+            return self._delete_wire_miss(Path(schematic_path), start_point, end_point)
 
         except Exception as e:
             logger.error(f"Error deleting schematic wire: {e}")
@@ -2406,6 +2413,52 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _delete_wire_miss(
+        schematic_path: Any, start_point: List[float], end_point: List[float]
+    ) -> Dict[str, Any]:
+        """Explain a delete_schematic_wire miss (#521).
+
+        A delete removes one stored segment whose two end points are both within 0.5 mm of
+        start and end. The usual misses are a run KiCad split into several segments (at a
+        junction or a T) and a point that is not where the wire is stored, so list the
+        segments at each point with their stored coordinates.
+        """
+        from commands.wire_manager import WireManager
+
+        at_start = WireManager.wires_touching(schematic_path, start_point)
+        at_end = WireManager.wires_touching(schematic_path, end_point)
+
+        def fmt(point: Any) -> str:
+            return f"({point['x']:g}, {point['y']:g})"
+
+        def describe(label: str, point: List[float], wires: List[Dict[str, Any]]) -> str:
+            where = f"({float(point[0]):g}, {float(point[1]):g})"
+            if not wires:
+                return f"No wire touches {label} {where}."
+            parts = [
+                f"{fmt(w['start'])} -> {fmt(w['end'])}"
+                + (" (passes through)" if w["at"] == "middle" else "")
+                for w in wires
+            ]
+            return f"Wires at {label} {where}: " + "; ".join(parts) + "."
+
+        message = (
+            "No matching wire found. A delete removes one wire segment whose two stored end "
+            "points are both within 0.5 mm of start and end (in either order); a run split "
+            "into several segments at a junction or a T has to be deleted one segment at a "
+            "time. "
+            + describe("start", start_point, at_start)
+            + " "
+            + describe("end", end_point, at_end)
+        )
+        return {
+            "success": False,
+            "message": message,
+            "wiresAtStart": at_start,
+            "wiresAtEnd": at_end,
+        }
 
     def _handle_delete_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a net label from the schematic"""
@@ -2521,7 +2574,7 @@ class SchematicHandlersMixin:
                 rotation = at_entry[3] if len(at_entry) > 3 else 0
                 item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
 
-                with open(schematic_path, "w", encoding="utf-8") as f:
+                with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
 
                 return {
@@ -2584,7 +2637,9 @@ class SchematicHandlersMixin:
                 if params.get("blackAndWhite"):
                     cmd.append("--black-and-white")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {
@@ -2893,7 +2948,7 @@ class SchematicHandlersMixin:
                     "message": f"Sheet '{sheet_name}' not found in {schematic_path}",
                 }
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(modified)
 
             return {
@@ -2933,7 +2988,9 @@ class SchematicHandlersMixin:
                     "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
                 }
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", newline="", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
@@ -2949,7 +3006,9 @@ class SchematicHandlersMixin:
                 ]
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL
+                )
 
                 # kicad-cli returns non-zero when ERC violations are found —
                 # this is normal, not an error.  Only fail when no JSON was
@@ -3572,7 +3631,9 @@ class SchematicHandlersMixin:
                 tmp_path,
                 schematic_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+            )
             if result.returncode != 0:
                 logger.warning(
                     f"kicad-cli netlist export failed (exit {result.returncode}): "
@@ -4229,7 +4290,9 @@ class SchematicHandlersMixin:
                     tmp_dir,
                     schematic_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                )
 
                 if result.returncode != 0:
                     return {

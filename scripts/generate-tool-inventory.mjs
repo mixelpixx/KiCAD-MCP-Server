@@ -57,6 +57,7 @@ const SECTIONS = [
   ["schematic.ts", "Schematic"],
   ["schematic-batch.ts", "Schematic Batch Operations"],
   ["schematic-hierarchy.ts", "Hierarchical Sheets"],
+  ["variants.ts", "Assembly Variants"],
   ["schematic-layout.ts", "Schematic Layout and Cosmetics"],
   ["validation.ts", "File Validation"],
   ["library.ts", "Footprint Libraries and Library Tables"],

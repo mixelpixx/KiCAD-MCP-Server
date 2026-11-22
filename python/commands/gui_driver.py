@@ -166,7 +166,7 @@ def ensure_helper_installed(
                     shutil.copytree(src, target / src.name, dirs_exist_ok=True)
                 else:
                     shutil.copy2(src, target / src.name)
-            marker.write_text(HELPER_VERSION + "\n", encoding="utf-8")
+            marker.write_bytes((HELPER_VERSION + "\n").encode("utf-8"))
             installed.append(str(target))
         except OSError as exc:  # never let self-install break the graceful path
             logger.warning("gui-driver helper install into %s failed: %s", target, exc)

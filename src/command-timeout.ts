@@ -28,6 +28,7 @@ export const LONG_COMMAND_TIMEOUT_MS = 600_000;
 export const LONG_RUNNING_COMMANDS = [
   "run_drc",
   "export_gerber",
+  "export_variant_bom",
   "export_pdf",
   "export_3d",
   "sync_schematic_to_board",
