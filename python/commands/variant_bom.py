@@ -47,7 +47,13 @@ def export_variant_bom(params):
                 cmd.append("--exclude-dnp")
             cmd.append(str(schematic))
             result = subprocess.run(
-                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
+                cmd,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
             )
             if result.returncode:
                 detail = (result.stderr or result.stdout).strip()
