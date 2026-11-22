@@ -167,6 +167,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **macOS: KiCad is found when installed as `/Applications/KiCad.app`** (#543).
+  Every lookup hard-coded the DMG layout (`/Applications/KiCad/KiCad.app`),
+  so dragging the app straight into `/Applications` broke `kicad-cli`
+  discovery and hid the stock footprint and symbol libraries. A new
+  `macos_kicad_apps()` helper in `utils/kicad_roots.py` returns the installed
+  bundles — the one holding the running interpreter first, then the DMG
+  layout, `/Applications/KiCad.app` and the `~/Applications` variants — and
+  all the call sites use it. Table URIs pointing into a moved bundle are
+  re-rooted onto the installed one, so the global stock tables keep working
+  after the app moves.
+
 - **IPC tools that rewrite a footprint warn that KiCad drops data from it**
   (#569). `move_component`, `rotate_component`, `set_footprint_type` and
   `add_component_3d_model` send each footprint back to KiCad with

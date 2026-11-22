@@ -225,3 +225,36 @@ class TestCliBackedToolClearError:
         assert result["success"] is False
         assert "Could not locate kicad-cli" in result["message"]
         assert "KICAD_CLI" in result["message"]
+
+
+# --------------------------------------------------------------------------- #
+# macOS bundle locations (#543)
+# --------------------------------------------------------------------------- #
+
+
+class TestMacosBundleCli:
+    def test_darwin_bundle_location_resolves_cli(self, tmp_path, monkeypatch):
+        import utils.kicad_roots as kr
+
+        bundle = tmp_path / "KiCad.app"
+        cli = _make_fake_cli(bundle / "Contents" / "MacOS")
+        monkeypatch.setattr(kc.platform, "system", lambda: "Darwin")
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "python3"))
+        monkeypatch.setattr(kc.shutil, "which", lambda name: None)
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        assert kc.resolve_kicad_cli(force=True) == str(cli)
+
+    def test_darwin_flat_install_beats_dmg_layout(self, tmp_path, monkeypatch):
+        """When both layouts exist, the helper's order wins: the interpreter's
+        bundle first, then the DMG layout, then /Applications/KiCad.app."""
+        import utils.kicad_roots as kr
+
+        dmg = tmp_path / "KiCad" / "KiCad.app"
+        flat = tmp_path / "KiCad.app"
+        dmg_cli = _make_fake_cli(dmg / "Contents" / "MacOS")
+        _make_fake_cli(flat / "Contents" / "MacOS")
+        monkeypatch.setattr(kc.platform, "system", lambda: "Darwin")
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "python3"))
+        monkeypatch.setattr(kc.shutil, "which", lambda name: None)
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [dmg, flat])
+        assert kc.resolve_kicad_cli(force=True) == str(dmg_cli)

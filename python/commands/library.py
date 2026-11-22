@@ -212,6 +212,16 @@ class LibraryManager:
         # Convert to absolute path
         path = Path(resolved)
 
+        # A stock row can point into the bundle KiCad was installed in; once
+        # the app moves, re-root the same Contents/... suffix onto an
+        # installed bundle (#543).
+        if not path.exists():
+            from utils.kicad_roots import reroot_kicad_app_path
+
+            for candidate in reroot_kicad_app_path(path):
+                if candidate.exists():
+                    return str(candidate)
+
         # Check if path exists
         if path.exists():
             return str(path)
@@ -225,7 +235,14 @@ class LibraryManager:
         possible_paths = [
             "/usr/share/kicad/footprints",
             "/usr/local/share/kicad/footprints",
-            "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints",
+        ]
+
+        # Footprints under every installed macOS bundle (DMG layout,
+        # /Applications/KiCad.app, ~/Applications variants — #543).
+        from utils.kicad_roots import macos_kicad_apps
+
+        possible_paths += [
+            str(app / "Contents" / "SharedSupport" / "footprints") for app in macos_kicad_apps()
         ]
 
         # Prepend Windows install roots from the shared discovery helper (registry

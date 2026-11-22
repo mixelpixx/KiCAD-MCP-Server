@@ -104,12 +104,11 @@ class PlatformHelper:
             paths = [p for p in candidates if p.exists()]
 
         elif PlatformHelper.is_macos():
-            # macOS: Check multiple KiCAD application bundle locations
-            kicad_app_paths = [
-                Path("/Applications/KiCad/KiCad.app"),
-                Path("/Applications/KiCAD/KiCad.app"),  # Alternative capitalization
-                Path.home() / "Applications" / "KiCad" / "KiCad.app",  # User Applications
-            ]
+            # macOS: every installed bundle (DMG layout, /Applications/KiCad.app,
+            # ~/Applications variants — #543); the interpreter's bundle first.
+            from utils.kicad_roots import macos_kicad_apps
+
+            kicad_app_paths = macos_kicad_apps()
 
             # Check Python framework paths in each KiCAD installation
             for kicad_app in kicad_app_paths:
@@ -191,16 +190,14 @@ class PlatformHelper:
                 "/usr/local/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
             ]
         elif PlatformHelper.is_macos():
-            patterns = [
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
-                "/Applications/KiCAD/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
-                str(
-                    Path.home()
-                    / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"
-                ),
+            # Symbol globs under every installed bundle (#543).
+            from utils.kicad_roots import macos_kicad_apps
+
+            for app in macos_kicad_apps():
+                symbols = app / "Contents" / "SharedSupport" / "symbols"
+                patterns.append(str(symbols / "*.kicad_sym"))
                 # KiCAD 10 per-symbol directory libraries
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_symdir/*.kicad_sym",
-            ]
+                patterns.append(str(symbols / "*.kicad_symdir" / "*.kicad_sym"))
 
         # Add user library paths for all platforms
         patterns.append(str(Path.home() / "Documents" / "KiCad" / "*" / "symbols" / "*.kicad_sym"))
@@ -477,15 +474,18 @@ class PlatformHelper:
 
         candidates: List[Path] = []
         try:
-            from utils.kicad_roots import kicad_install_roots
+            from utils.kicad_roots import kicad_install_roots, macos_kicad_apps
 
             candidates += [root / "share" / "kicad" / "template" for root in kicad_install_roots()]
+            # macOS: the template dir under every installed bundle (#543).
+            candidates += [
+                app / "Contents" / "SharedSupport" / "template" for app in macos_kicad_apps()
+            ]
         except Exception:
             pass
         candidates += [
             Path("/usr/share/kicad/template"),
             Path("/usr/local/share/kicad/template"),
-            Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/template"),
         ]
         for candidate in candidates:
             if candidate.is_dir():

@@ -790,3 +790,41 @@ def test_set_uri_tolerates_a_space_before_the_closing_paren(tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# --------------------------------------------------------------------------- #
+# _resolve_uri re-roots a stock row out of a moved bundle (#543)
+# --------------------------------------------------------------------------- #
+
+
+class TestResolveUriReroot:
+    def test_footprint_row_rerooted_onto_installed_bundle(self, tmp_path, monkeypatch):
+        import utils.kicad_roots as kr
+
+        bundle = tmp_path / "KiCad.app"
+        target = bundle / "Contents" / "SharedSupport" / "footprints"
+        (target / "Resistor_SMD.pretty").mkdir(parents=True)
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        manager = LibraryManager()
+        uri = (
+            "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints" "/Resistor_SMD.pretty"
+        )
+        assert manager._resolve_uri(uri, path_vars={}) == str(target / "Resistor_SMD.pretty")
+
+    def test_symbol_row_rerooted_onto_installed_bundle(self, tmp_path, monkeypatch):
+        import utils.kicad_roots as kr
+
+        bundle = tmp_path / "KiCad.app"
+        target = bundle / "Contents" / "SharedSupport" / "symbols"
+        target.mkdir(parents=True)
+        (target / "Device.kicad_sym").write_text("(kicad_symbol_lib)", encoding="utf-8")
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        manager = SymbolLibraryManager()
+        uri = "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/Device.kicad_sym"
+        assert manager._resolve_uri(uri, path_vars={}) == str(target / "Device.kicad_sym")
+
+    def test_existing_path_is_not_rerooted(self, tmp_path):
+        manager = LibraryManager()
+        real = tmp_path / "lib.pretty"
+        real.mkdir()
+        assert manager._resolve_uri(str(real), path_vars={}) == str(real)

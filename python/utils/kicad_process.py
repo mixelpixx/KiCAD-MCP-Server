@@ -193,10 +193,12 @@ class KiCADProcessManager:
                 Path("/usr/bin/kicad"),
             ]
         elif system == "Darwin":  # macOS
-            candidates = [
-                Path("/Applications/KiCad/KiCad.app/Contents/MacOS/kicad"),
-                Path("/Applications/KiCad/pcbnew.app/Contents/MacOS/pcbnew"),
-            ]
+            # Every installed bundle (DMG layout, /Applications/KiCad.app,
+            # ~/Applications variants — #543), then the standalone pcbnew app.
+            from utils.kicad_roots import macos_kicad_apps
+
+            candidates = [app / "Contents" / "MacOS" / "kicad" for app in macos_kicad_apps()]
+            candidates.append(Path("/Applications/KiCad/pcbnew.app/Contents/MacOS/pcbnew"))
         elif system == "Windows":
             from utils.kicad_roots import kicad_install_roots
 

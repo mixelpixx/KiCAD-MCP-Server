@@ -63,9 +63,14 @@ def _candidate_paths() -> List[Path]:
 
         candidates.extend(root / "bin" / name for root in windows_kicad_roots())
     elif system == "Darwin":
+        # Installed bundles first (the DMG layout, the app dragged straight
+        # into /Applications, ~/Applications variants — #543), then the
+        # well-known binary locations.
+        from utils.kicad_roots import macos_kicad_apps
+
+        candidates.extend(app / "Contents" / "MacOS" / name for app in macos_kicad_apps())
         candidates.extend(
             [
-                Path("/Applications/KiCad/KiCad.app/Contents/MacOS") / name,
                 Path("/usr/local/bin") / name,
                 Path("/opt/homebrew/bin") / name,
             ]

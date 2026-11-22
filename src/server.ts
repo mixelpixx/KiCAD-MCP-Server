@@ -161,8 +161,10 @@ function findPythonExecutable(scriptPath: string): string {
     // Standard KiCAD installation paths
     const kicadAppPaths = [
       "/Applications/KiCad/KiCad.app",
+      "/Applications/KiCad.app", // App dragged straight into /Applications (#543)
       "/Applications/KiCAD/KiCad.app", // Alternative capitalization
       `${process.env.HOME}/Applications/KiCad/KiCad.app`, // User Applications folder
+      `${process.env.HOME}/Applications/KiCad.app`,
     ];
 
     // Check all KiCAD app locations with all Python versions

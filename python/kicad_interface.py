@@ -342,7 +342,7 @@ Windows Troubleshooting:
         elif sys.platform == "darwin":
             help_message = """
 macOS Troubleshooting:
-1. Verify KiCAD is installed: /Applications/KiCad/KiCad.app
+1. Verify KiCAD is installed: /Applications/KiCad/KiCad.app or /Applications/KiCad.app
 2. Check PYTHONPATH points to KiCAD's Python packages
 3. Run: python3 -c "import pcbnew" to test
 """

@@ -23,6 +23,14 @@ from, in order of authority:
 Only Windows has the "installer can relocate the root" problem this solves;
 other platforms return an empty list, and callers keep their existing per-OS
 logic there.
+
+macOS has the same shape of problem for *bundles* rather than roots: the
+DMG layout puts KiCad at ``/Applications/KiCad/KiCad.app``, but the app can
+also be dragged straight into ``/Applications/KiCad.app`` (or the user's
+``~/Applications``), and every module above hard-coded the DMG path (#543).
+``macos_kicad_apps()`` is the macOS counterpart of ``kicad_install_roots()``:
+the installed bundles, the one holding the running interpreter first, for
+callers to append ``Contents/...`` suffixes to.
 """
 
 import itertools
@@ -30,6 +38,7 @@ import logging
 import os
 import platform
 import re
+import sys
 from pathlib import Path
 from typing import Iterable, Iterator, List, Optional, Tuple
 
@@ -43,6 +52,10 @@ _VERSION_RE = re.compile(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?")
 # while the server runs, and discovery walks the registry + globs the filesystem,
 # which is far too expensive to repeat on every library-path resolution.
 _cached_roots: Optional[List[Path]] = None
+
+# Same caching for the macOS bundle list (a handful of is_dir checks, but the
+# callers run on every library-path resolution).
+_cached_macos_apps: Optional[List[Path]] = None
 
 
 def _version_key(text: str) -> _VersionKey:
@@ -181,10 +194,92 @@ def kicad_install_roots() -> List[Path]:
     return []
 
 
+def _macos_bundle_candidates() -> List[Path]:
+    """Candidate macOS KiCad.app locations in priority order (may not exist).
+
+    The bundle holding the running interpreter comes first: KiCad's bundled
+    Python runs from inside the bundle, so a server launched from it finds
+    its own install before any ``/Applications`` copy. Then the DMG layout,
+    the app dragged straight into ``/Applications``, and the ``~/Applications``
+    variants, with the alternative ``KiCAD`` capitalization last (as
+    ``platform_helper`` and ``server.ts`` already handled).
+    """
+    candidates: List[Path] = []
+    exe = Path(sys.executable or "")
+    for parent in exe.parents:
+        if parent.suffix == ".app" and "kicad" in parent.name.lower():
+            candidates.append(parent)
+            break
+    candidates.extend(
+        [
+            Path("/Applications/KiCad/KiCad.app"),
+            Path("/Applications/KiCad.app"),
+            Path.home() / "Applications" / "KiCad" / "KiCad.app",
+            Path.home() / "Applications" / "KiCad.app",
+            Path("/Applications/KiCAD/KiCad.app"),
+            Path.home() / "Applications" / "KiCad" / "KiCAD.app",
+        ]
+    )
+    return candidates
+
+
+def macos_kicad_apps() -> List[Path]:
+    """Installed macOS KiCad.app bundles, the interpreter's bundle first.
+
+    Only bundles that exist are returned, de-duplicated (the ``KiCad`` /
+    ``KiCAD`` spellings can name the same directory on a case-insensitive
+    filesystem). The result is cached for the process (see ``_cached_roots``);
+    a fresh copy is returned each call so callers can freely mutate it. Use
+    ``reset_cache()`` in tests that change the underlying filesystem view.
+    Non-macOS platforms return ``[]``.
+    """
+    global _cached_macos_apps
+    if platform.system() != "Darwin":
+        return []
+    if _cached_macos_apps is None:
+        seen: set = set()
+        apps: List[Path] = []
+        for candidate in _macos_bundle_candidates():
+            if not candidate.is_dir():
+                continue
+            key = os.path.normcase(os.path.normpath(str(candidate.resolve())))
+            if key in seen:
+                continue
+            seen.add(key)
+            apps.append(candidate)
+        _cached_macos_apps = apps
+    return list(_cached_macos_apps)
+
+
+def reroot_kicad_app_path(path: Path) -> List[Path]:
+    """Re-root a path inside a missing KiCad.app bundle onto installed bundles (#543).
+
+    Global lib tables can hold stock rows as absolute paths into the bundle
+    KiCad was installed in (``/Applications/KiCad/KiCad.app/Contents/...``);
+    once the app moves, those rows point at a bundle that no longer exists
+    even though the same files ship in the installed bundle. Given such a
+    path, return the same ``Contents/...`` suffix under each installed
+    bundle, in priority order; ``[]`` when the path has no KiCad.app segment
+    or the bundle it names still exists.
+    """
+    parts = Path(path).parts
+    for i, part in enumerate(parts):
+        if part.lower().endswith(".app") and "kicad" in part.lower():
+            if i + 1 < len(parts) and parts[i + 1] == "Contents":
+                if Path(*parts[: i + 1]).is_dir():
+                    return []
+                suffix = Path(*parts[i + 2 :])
+                if not suffix.parts:
+                    return []
+                return [app / "Contents" / suffix for app in macos_kicad_apps()]
+    return []
+
+
 def reset_cache() -> None:
     """Clear the cached install-root discovery (primarily for tests)."""
-    global _cached_roots
+    global _cached_roots, _cached_macos_apps
     _cached_roots = None
+    _cached_macos_apps = None
 
 
 def ensure_cairo_on_path(extra_dirs: Iterable[str] = ()) -> Optional[str]:

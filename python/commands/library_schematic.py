@@ -21,14 +21,19 @@ class LibraryManager:
                 # KiCAD 8/9 single-file libraries
                 "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",
                 "/usr/share/kicad/symbols/*.kicad_sym",
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
                 os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_sym"),
                 # KiCAD 10 per-symbol directory libraries
                 "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
                 "/usr/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_symdir/*.kicad_sym",
                 os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_symdir/*.kicad_sym"),
             ]
+            # macOS symbol globs under every installed bundle (#543).
+            from utils.kicad_roots import macos_kicad_apps
+
+            for app in macos_kicad_apps():
+                symbols = app / "Contents" / "SharedSupport" / "symbols"
+                search_paths.append(str(symbols / "*.kicad_sym"))
+                search_paths.append(str(symbols / "*.kicad_symdir" / "*.kicad_sym"))
 
         libraries = []
         for path_pattern in search_paths:
