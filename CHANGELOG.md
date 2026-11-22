@@ -167,6 +167,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`batch_add_components` and `batch_add_and_connect` resolve references like
+  `add_schematic_component`.** After #570 the single tool numbered power
+  symbols and refused a non-power symbol without a reference, but the batch
+  tools still wrote `#PWR?` literally and placed a missing reference as `X?`.
+  Both now share `utils/power_reference.py`: a power symbol without a
+  reference, or with `#PWR?`, gets the next free `#PWRnn` (`PWR_FLAG`:
+  `#FLGnn`), each one in a batch its own number, and a non-power symbol
+  without one is a per-component error. `batch_add_and_connect` wires each
+  component's nets to the reference it was placed as (by list position), so
+  two power symbols sent as `#PWR?` no longer share one entry, and the nets of
+  a multi-unit part's units are merged instead of the last unit's replacing
+  the others. Both replies now list the placed references.
+
 - **`validate_schematic` names items nested inside `(sheet_instances ...)` (#524).**
   A symbol pasted into the block -- the reproduction is a copy of a power
   symbol hand-edited in -- is syntactically balanced, so the structure scan

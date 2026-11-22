@@ -28,20 +28,13 @@ from commands.wire_manager import WireManager
 from utils.board_items import clone_footprint
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.power_reference import resolve_placement_reference
 from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
-from utils.sheet_tree import instance_paths
 from utils.skip_items import skip_items
-from utils.symbol_instances import (
-    ReferenceAllocator,
-    _power_lib_ids,
-    annotate_sheet,
-    definition_is_power,
-    instance_report,
-    project_references,
-)
+from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
 
@@ -69,54 +62,6 @@ def _xy(value: Any) -> Optional[List[float]]:
 
 
 _POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
-
-
-def _allocate_power_reference(schematic_file: Path, prefix: str = "#PWR") -> Optional[str]:
-    """The next unused ``{prefix}nn`` in the schematic's project (#524).
-
-    Counts every reference on every sheet the root reaches, so a number
-    taken on another sheet is never re-picked. Returns None when the
-    project cannot be read, so the caller can fall back to the given
-    reference instead of failing the placement.
-    """
-    try:
-        root, _paths = instance_paths(schematic_file)
-        return ReferenceAllocator(project_references(root, schematic_file)).next_free(
-            prefix, zero=True
-        )
-    except Exception as e:
-        logger.warning("Could not allocate a %s reference for %s: %s", prefix, schematic_file, e)
-        return None
-
-
-def _is_power_symbol(loader: Any, schematic_file: Path, library: str, comp_type: str) -> bool:
-    """True when ``library:comp_type`` is a power symbol (#524).
-
-    The ``power:`` library prefix is the usual sign, but a project-library
-    symbol can carry the ``(power)`` flag instead. That is checked two ways,
-    both read-only and both falling back to the prefix when they find
-    nothing: the schematic's own ``lib_symbols`` (via ``_power_lib_ids`` —
-    the definition is already there when the symbol was placed before) and
-    the library definition itself (via the loader's cached extraction —
-    which is also how the placement itself resolves the symbol, so a first
-    placement is recognised too). A symbol neither check recognises is
-    treated as non-power.
-    """
-    lib_id = f"{library}:{comp_type}"
-    if lib_id.lower().startswith("power:"):
-        return True
-    try:
-        if lib_id.lower() in {
-            known.lower() for known in _power_lib_ids(schematic_file.read_text(encoding="utf-8"))
-        }:
-            return True
-    except Exception:
-        pass
-    try:
-        block = loader.extract_symbol_from_library(library, comp_type)
-    except Exception:
-        block = None
-    return bool(block) and definition_is_power(block)
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -367,37 +312,15 @@ class SchematicHandlersMixin:
 
             loader = DynamicSymbolLoader(project_path=derived_project_path)
 
-            # Power symbols (#524): placed without a reference, or with the
-            # placeholder, a power symbol gets the next unused number in the
-            # project — every sheet and every instance path counted — instead
-            # of the literal placeholder, which would leave several power
-            # symbols sharing one unannotated "#PWR?" reference. (KiCad loads
-            # a lone "#PWR?" fine; the duplicates are the problem.) The
-            # chosen number is the reference the placement writes and the
-            # reply reports. An explicit reference other than the placeholder
-            # is left alone, so the power check below runs only when the
-            # caller gave no usable reference. power:PWR_FLAG is a power
-            # symbol too, but its prefix is "#FLG", never "#PWR".
-            if reference in (None, "", "X?", "#PWR?", "#PWR", "#FLG?", "#FLG"):
-                if _is_power_symbol(loader, schematic_file, library, comp_type):
-                    prefix = "#FLG" if comp_type.lower() == "pwr_flag" else "#PWR"
-                    if reference in (None, "", "X?", f"{prefix}?", prefix):
-                        allocated = _allocate_power_reference(schematic_file, prefix)
-                        if allocated is not None:
-                            reference = allocated
-                elif reference in (None, "", "X?"):
-                    # The reference is optional only so power symbols can omit it
-                    # and be allocated the next free #PWRnn/#FLGnn. Every other
-                    # symbol needs one: leaving it out used to place a resistor
-                    # silently named "X?", which is not a reference at all.
-                    return {
-                        "success": False,
-                        "message": (
-                            f"Reference is required for {library}:{comp_type}: omit it "
-                            "only for power symbols (power:GND, …), which are allocated "
-                            "the next free #PWRnn (power:PWR_FLAG: #FLGnn)."
-                        ),
-                    }
+            # Power symbols (#524) placed without a reference, or with the
+            # "#PWR?" placeholder, get the next unused #PWRnn in the project
+            # (power:PWR_FLAG: #FLGnn); a non-power symbol without a
+            # reference is refused. Shared with the batch tools.
+            reference, reference_error = resolve_placement_reference(
+                loader, schematic_file, library, comp_type, reference
+            )
+            if reference_error is not None:
+                return {"success": False, "message": reference_error}
             value = component.get("value", comp_type)
             footprint = component.get("footprint", "")
             x = component.get("x", 0)
