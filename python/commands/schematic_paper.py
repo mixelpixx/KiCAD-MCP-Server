@@ -82,7 +82,10 @@ def set_paper(path: Path, paper: str, portrait: bool = False) -> None:
         if anchor is None:
             raise ValueError(f"{path} has no root (uuid ...); is it a .kicad_sch file?")
         start, end = anchor
-        indent = text[text.rfind("\n", 0, start) + 1 : start]
-        text = text[:end] + "\n" + indent + token + text[end:]
+        line_prefix = text[text.rfind("\n", 0, start) + 1 : start]
+        # Put the token on its own line with (uuid's indent, or, when (uuid shares
+        # its line with other tokens (a one-line file), right after it.
+        separator = "\n" + line_prefix if line_prefix.strip() == "" else " "
+        text = text[:end] + separator + token + text[end:]
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)

@@ -194,3 +194,20 @@ def test_create_schematic_handler_reports_unknown_paper(tmp_path: Path) -> None:
     result = iface._handle_create_schematic({"name": "bad", "path": str(tmp_path), "paper": "A6"})
     assert result["success"] is False
     assert "USLetter" in result["message"]
+
+
+def test_set_paper_inserts_into_single_line_file(tmp_path: Path) -> None:
+    # Files from other generators may put the whole sheet on one line.
+    import sexpdata
+
+    path = tmp_path / "flat.kicad_sch"
+    path.write_text(
+        f'(kicad_sch (version 20260101) (generator "x") (uuid "{ROOT_UUID}") (lib_symbols))',
+        encoding="utf-8",
+    )
+    set_paper(path, "A3")
+    text = path.read_text(encoding="utf-8")
+    assert text.count("(kicad_sch") == 1
+    assert text.count("(paper") == 1
+    tree = sexpdata.loads(text)
+    assert [sexpdata.Symbol("paper"), "A3"] in tree
