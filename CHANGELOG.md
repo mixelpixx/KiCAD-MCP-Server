@@ -167,12 +167,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
-- **macOS: KiCad process detection no longer matches this server.** The server
-  runs on KiCad's bundled Python inside `KiCad.app`, so `pgrep -f "KiCad|pcbnew"`
-  always found the server itself and `is_running()` was True with KiCad
-  closed. It now matches the `kicad`, `pcbnew` and `eeschema` processes by
-  exact name, as the Linux branch does.
-
 - **`batch_add_components` and `batch_add_and_connect` resolve references like
   `add_schematic_component`.** After #570 the single tool numbered power
   symbols and refused a non-power symbol without a reference, but the batch
@@ -533,6 +527,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   sets them, ignores same-named properties inside units, adds a new property
   before the symbol's units in every layout, and refuses to write when the
   edit would unbalance the file or leave the property outside the symbol.
+
+- **macOS: KiCad process detection no longer matches this server.** The server
+  runs on KiCad's bundled Python inside `KiCad.app`, so `pgrep -f "KiCad|pcbnew"`
+  always found the server itself and `is_running()` was True with KiCad
+  closed. It now matches the `kicad`, `pcbnew` and `eeschema` processes by
+  exact name, as the Linux branch does.
 
 ## [2.9.0] - 2026-11-11
 
