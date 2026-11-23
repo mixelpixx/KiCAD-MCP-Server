@@ -42,6 +42,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Batch labelling tools point to `autoplace_schematic_fields`.** Labels that
+  `batch_add_and_connect` and `batch_connect` put on pins can cover the
+  Reference/Value text placed earlier; both descriptions now say to run
+  `autoplace_schematic_fields` afterwards.
+
 - **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
   A DSN carries only net-class clearances; the board's `.kicad_dru` (custom
   rules such as isolation between voltage domains) and the `.kicad_pro`'s
