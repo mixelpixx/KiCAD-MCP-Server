@@ -472,16 +472,32 @@ Stroke types are `default`, `solid`, `dash`, `dot`, `dash_dot` and
 `dash_dot_dot`. A color is `[r, g, b, a]` with r, g, b from 0 to 255 and a
 (opacity) from 0 to 1. A `color` fill needs `fill.color`.
 
-## Schematic Creation and Export (6 tools)
+## Schematic Creation and Export (7 tools)
 
 ### create_schematic
 
 Create a new schematic.
 
-| Parameter | Type   | Required | Description    |
-| --------- | ------ | -------- | -------------- |
-| name      | string | Yes      | Schematic name |
-| path      | string | No       | Optional path  |
+| Parameter | Type    | Required | Description                                      |
+| --------- | ------- | -------- | ------------------------------------------------ |
+| name      | string  | Yes      | Schematic name                                   |
+| path      | string  | No       | Optional path                                    |
+| paper     | string  | No       | Paper size (default A4); see set_schematic_paper |
+| portrait  | boolean | No       | Portrait orientation (default landscape)         |
+
+### set_schematic_paper
+
+Set the sheet's paper size and orientation, as KiCad's Page Settings does.
+New schematics start on A4; pick a larger size when the parts do not fit.
+Sizes, in any case: A5, A4, A3, A2, A1, A0, A, B, C, D, E, USLetter, USLegal,
+USLedger. An unknown size is an error that lists these, and the file is not
+changed. Connectivity is not touched.
+
+| Parameter     | Type    | Required | Description                              |
+| ------------- | ------- | -------- | ---------------------------------------- |
+| schematicPath | string  | Yes      | Path to the .kicad_sch file              |
+| paper         | string  | Yes      | Paper size                               |
+| portrait      | boolean | No       | Portrait orientation (default landscape) |
 
 ### export_schematic_svg
 

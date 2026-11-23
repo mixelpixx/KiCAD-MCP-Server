@@ -255,6 +255,7 @@ _Source: `src/tools/schematic.ts`_
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
 | `list_schematic_rectangles`           | List rectangles drawn on a sheet (corners, stroke, fill, uuid)                                                                                       | `schematic`             |
 | `set_schematic_rectangle`             | Create, edit or delete a rectangle drawn on a sheet                                                                                                  | `schematic`             |
+| `set_schematic_paper`                 | Set the sheet paper size (A4, A3, USLetter, ...) and orientation                                                                                     | `schematic`             |
 | `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | `schematic_hierarchy`   |
 
 ---

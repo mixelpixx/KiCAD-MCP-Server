@@ -4,9 +4,11 @@ import shutil
 import sys
 import traceback
 import uuid
+from pathlib import Path
 from typing import Any, List, Optional
 
 import sexpdata
+from commands.schematic_paper import PAPER_SIZES, normalize_paper, set_paper
 from utils.sexpr_format import prettify
 
 try:
@@ -118,11 +120,23 @@ class SchematicManager:
 
     @staticmethod
     def create_schematic(
-        name: str, metadata: Optional[Any] = None, *, path: Optional[str] = None
+        name: str,
+        metadata: Optional[Any] = None,
+        *,
+        path: Optional[str] = None,
+        paper: Optional[str] = None,
+        portrait: bool = False,
     ) -> Any:
-        """Create a new empty schematic from template"""
+        """Create a new empty schematic from template.
+
+        ``paper`` (e.g. "A3", "USLetter") sets the sheet size; the template's A4
+        is kept when it is omitted. An unknown size raises ValueError before any
+        file is written.
+        """
         if Schematic is None:
             raise SchematicLoadError(path or name, kind="dependency_missing")
+        if paper is not None and normalize_paper(paper) is None:
+            raise ValueError(f"Unknown paper size {paper!r}. Valid sizes: {', '.join(PAPER_SIZES)}")
         try:
             # Determine template path. New schematics start from a blank KiCad 10
             # file (empty lib_symbols, no placed symbols) rather than the seeded
@@ -188,6 +202,9 @@ class SchematicManager:
                     f.write("  (lib_symbols\n  )\n\n")
                     f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
                     f.write(")\n")
+
+            if paper is not None or portrait:
+                set_paper(Path(output_path), paper or "A4", portrait)
 
             # Load the schematic
             sch = Schematic(output_path)

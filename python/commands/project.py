@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pcbnew  # type: ignore
+from commands.schematic_paper import PAPER_SIZES, normalize_paper, set_paper
 from utils.kicad_project import write_kicad_pro
 from utils.project_settings_guard import (
     preserve_project_settings,
@@ -54,6 +55,14 @@ class ProjectCommands:
             project_name = params.get("name") or params.get("projectName", "New_Project")
             path = params.get("path", os.getcwd())
             template = params.get("template")
+            paper = params.get("paper")
+            portrait = bool(params.get("portrait", False))
+            if paper is not None and normalize_paper(str(paper)) is None:
+                return {
+                    "success": False,
+                    "message": f"Unknown paper size {paper!r}. "
+                    f"Valid sizes: {', '.join(PAPER_SIZES)}",
+                }
 
             # Generate the full project path
             project_path = os.path.join(path, project_name)
@@ -144,6 +153,9 @@ class ProjectCommands:
                     f.write("  (lib_symbols\n  )\n\n")
                     f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
                     f.write(")\n")
+
+            if paper is not None or portrait:
+                set_paper(Path(schematic_path), str(paper or "A4"), portrait)
 
             # Write a conformant KiCad 10 .kicad_pro (issue #220). The old
             # hand-rolled stub carried only board.filename plus a sheets entry

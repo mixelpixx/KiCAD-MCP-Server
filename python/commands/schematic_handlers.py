@@ -24,6 +24,7 @@ import pcbnew
 import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicLoadError, SchematicManager
+from commands.schematic_paper import normalize_paper, set_paper
 from commands.wire_manager import WireManager
 from utils.board_items import clone_footprint
 from utils.interactive_schematic import reload_kicad_schematic
@@ -235,7 +236,11 @@ class SchematicHandlersMixin:
 
             sch_path = path if path and path != "." else None
             schematic = SchematicManager.create_schematic(
-                project_name, path=sch_path, metadata=metadata
+                project_name,
+                path=sch_path,
+                metadata=metadata,
+                paper=params.get("paper"),
+                portrait=bool(params.get("portrait", False)),
             )
             # Resolve the saved file path the same way create_schematic does: when
             # `path` is already a full ".kicad_sch" file path, use it directly;
@@ -2707,6 +2712,28 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _handle_set_schematic_paper(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set a schematic sheet's paper size (A4, A3, USLetter, ...) and orientation."""
+        schematic_path = params.get("schematicPath")
+        if not schematic_path:
+            return {"success": False, "message": "schematicPath is required"}
+        sch_file = Path(schematic_path)
+        if not sch_file.exists():
+            return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+        portrait = bool(params.get("portrait", False))
+        try:
+            set_paper(sch_file, str(params.get("paper", "")), portrait)
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
+        paper = normalize_paper(str(params["paper"]))
+        orientation = "portrait" if portrait else "landscape"
+        return {
+            "success": True,
+            "message": f"Paper set to {paper} {orientation}",
+            "paper": paper,
+            "portrait": portrait,
+        }
 
     def _handle_add_schematic_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a free-form text annotation (SCH_TEXT) to a schematic."""
