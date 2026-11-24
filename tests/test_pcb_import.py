@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from commands.pcb_import import PcbImportCommands  # noqa: E402
 from utils.kicad_cli import resolve_kicad_cli  # noqa: E402
+from utils.subprocess_flags import no_window_flags  # noqa: E402
 
 # Gate cli-dependent tests on the same resolver the importer uses, so they run
 # on any discoverable install, not only a hardcoded path.
@@ -77,8 +78,9 @@ def test_default_format_is_auto_and_output_path_derived(tmp_path: Path) -> None:
     expected_out = tmp_path / "board.kicad_pcb"
     pic = _make_commands(tmp_path)
 
-    def fake_run(cmd, capture_output, text, timeout, stdin=None):
+    def fake_run(cmd, capture_output, text, timeout, stdin=None, creationflags=None):
         assert stdin is subprocess.DEVNULL
+        assert creationflags == no_window_flags()
         # Simulate kicad-cli producing the output file.
         Path(cmd[cmd.index("-o") + 1]).write_text("(kicad_pcb)")
         return _FakeCompletedProcess(
@@ -108,8 +110,9 @@ def test_explicit_format_passed_through(tmp_path: Path) -> None:
     input_file.write_bytes(b"fake")
     pic = _make_commands(tmp_path)
 
-    def fake_run(cmd, capture_output, text, timeout, stdin=None):
+    def fake_run(cmd, capture_output, text, timeout, stdin=None, creationflags=None):
         assert stdin is subprocess.DEVNULL
+        assert creationflags == no_window_flags()
         Path(cmd[cmd.index("-o") + 1]).write_text("(kicad_pcb)")
         return _FakeCompletedProcess(returncode=0, stdout="Importing using PADS format...")
 
@@ -127,8 +130,9 @@ def test_explicit_output_file_used(tmp_path: Path) -> None:
     custom_out = tmp_path / "nested" / "custom.kicad_pcb"
     pic = _make_commands(tmp_path)
 
-    def fake_run(cmd, capture_output, text, timeout, stdin=None):
+    def fake_run(cmd, capture_output, text, timeout, stdin=None, creationflags=None):
         assert stdin is subprocess.DEVNULL
+        assert creationflags == no_window_flags()
         out = Path(cmd[cmd.index("-o") + 1])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("(kicad_pcb)")
@@ -145,8 +149,9 @@ def test_report_format_requests_report_and_captures_contents(tmp_path: Path) -> 
     input_file.write_bytes(b"fake")
     pic = _make_commands(tmp_path)
 
-    def fake_run(cmd, capture_output, text, timeout, stdin=None):
+    def fake_run(cmd, capture_output, text, timeout, stdin=None, creationflags=None):
         assert stdin is subprocess.DEVNULL
+        assert creationflags == no_window_flags()
         Path(cmd[cmd.index("-o") + 1]).write_text("(kicad_pcb)")
         report_file = Path(cmd[cmd.index("--report-file") + 1])
         report_file.write_text('{"errors": []}')
@@ -171,8 +176,9 @@ def test_kicad_cli_stderr_surfaced_on_failure(tmp_path: Path) -> None:
     input_file.write_bytes(b"fake")
     pic = _make_commands(tmp_path)
 
-    def fake_run(cmd, capture_output, text, timeout, stdin=None):
+    def fake_run(cmd, capture_output, text, timeout, stdin=None, creationflags=None):
         assert stdin is subprocess.DEVNULL
+        assert creationflags == no_window_flags()
         return _FakeCompletedProcess(returncode=1, stderr="Invalid format: allegro")
 
     with patch("commands.pcb_import.subprocess.run", side_effect=fake_run):

@@ -207,7 +207,7 @@ function findPythonExecutable(scriptPath: string): string {
 
     // Resolve system python3 to full path using 'which'
     try {
-      const result = execSync("which python3", { encoding: "utf-8" }).trim();
+      const result = execSync("which python3", { encoding: "utf-8", windowsHide: true }).trim();
       if (result && existsSync(result)) {
         logger.info(`Resolved system Python via which: ${result}`);
         return result;
@@ -450,6 +450,7 @@ export class KiCADMcpServer {
             `"${pythonExe}" --version`,
             {
               timeout: 3000,
+              windowsHide: true,
               env: { ...process.env },
             },
             (error: any, stdout: string, stderr: string) => {
@@ -505,6 +506,7 @@ export class KiCADMcpServer {
             testCommand,
             {
               timeout: 5000,
+              windowsHide: true,
               env: { ...process.env },
             },
             (error: any, stdout: string, stderr: string) => {
@@ -682,6 +684,7 @@ export class KiCADMcpServer {
     this.resetReadyState();
     const worker = spawn(this.pythonExecutable, [this.kicadScriptPath], {
       stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
       env: this.pythonEnv,
     });
     this.pythonProcess = worker;

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pcbnew
 from PIL import Image
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.subprocess_flags import no_window_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -56,6 +57,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
             stdin=subprocess.DEVNULL,
+            creationflags=no_window_flags(),
         )
         if r.returncode == 0 and os.path.exists(out_path):
             with open(out_path, "rb") as f:
@@ -69,6 +71,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
             stdin=subprocess.DEVNULL,
+            creationflags=no_window_flags(),
         )
         if r.returncode == 0 and os.path.exists(out_path):
             with open(out_path, "rb") as f:
@@ -228,7 +231,12 @@ class BoardViewCommands:
 
                 try:
                     result = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        stdin=subprocess.DEVNULL,
+                        creationflags=no_window_flags(),
                     )
                 except subprocess.TimeoutExpired:
                     return {

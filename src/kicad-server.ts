@@ -313,6 +313,7 @@ class KiCADServer {
       console.error(`Using Python executable: ${pythonExe}`);
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
         env: {
           ...process.env,
         },

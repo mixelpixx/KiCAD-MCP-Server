@@ -26,6 +26,8 @@ import re
 import subprocess
 from typing import Any, Dict, Optional
 
+from utils.subprocess_flags import no_window_flags
+
 logger = logging.getLogger("kicad_interface")
 
 # Formats accepted by `kicad-cli pcb import --format`.
@@ -100,7 +102,12 @@ class PcbImportCommands:
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                stdin=subprocess.DEVNULL,
+                creationflags=no_window_flags(),
             )
         except Exception as e:  # noqa: BLE001 - surface subprocess failures as tool errors
             return {"success": False, "error": str(e)}

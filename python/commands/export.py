@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.subprocess_flags import no_window_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -138,6 +139,7 @@ class ExportCommands:
                             text=True,
                             timeout=60,
                             stdin=subprocess.DEVNULL,
+                            creationflags=no_window_flags(),
                         )
                         if result.returncode == 0:
                             # Get list of generated drill files
@@ -495,6 +497,7 @@ class ExportCommands:
                 text=True,
                 timeout=300,  # 5 minute timeout for 3D export
                 stdin=subprocess.DEVNULL,
+                creationflags=no_window_flags(),
             )
 
             if result.returncode != 0:

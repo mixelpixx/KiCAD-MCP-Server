@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from utils.subprocess_flags import no_window_flags
+
 logger = logging.getLogger("kicad_interface")
 
 SExpr = Union[str, List["SExpr"]]
@@ -190,7 +192,12 @@ def export_netlist(kicad_cli: str, schematic_path: str, timeout: int = 60) -> Op
         ]
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                stdin=subprocess.DEVNULL,
+                creationflags=no_window_flags(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.warning(f"kicad-cli netlist export could not run: {exc}")
