@@ -27,6 +27,11 @@ if str(_PYTHON_ROOT) not in sys.path:
 # saturate the CPU. On-demand parses still work (and are cached process-wide).
 os.environ.setdefault("KICAD_SKIP_SYMBOL_WARMUP", "1")
 
+# Never reach a KiCad the developer has open. With KiCad running, the runtime
+# IPC switch connects to it and tests run against the live session instead of
+# the stubs. Tests that exercise IPC patch kicad_interface.KICAD_BACKEND.
+os.environ.setdefault("KICAD_BACKEND", "swig")
+
 # ---------------------------------------------------------------------------
 # pcbnew stub — kicad_interface.py accesses pcbnew.__file__ and
 # pcbnew.GetBuildVersion() at module level.  Use MagicMock so that any
