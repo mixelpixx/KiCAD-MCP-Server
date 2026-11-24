@@ -533,6 +533,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   before the symbol's units in every layout, and refuses to write when the
   edit would unbalance the file or leave the property outside the symbol.
 
+- **macOS: KiCad process detection no longer matches this server.** The server
+  runs on KiCad's bundled Python inside `KiCad.app`, so `pgrep -f "KiCad|pcbnew"`
+  always found the server itself and `is_running()` was True with KiCad
+  closed. It now matches the `kicad`, `pcbnew` and `eeschema` processes by
+  exact name, as the Linux branch does.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt
