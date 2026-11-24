@@ -9,8 +9,9 @@ import subprocess
 from typing import List, Tuple
 
 import pytest
-from utils import kicad_process
 from utils.kicad_process import KiCADProcessManager
+
+from utils import kicad_process
 
 KICAD_PYTHON = (
     "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9"
