@@ -124,8 +124,11 @@ class KiCADProcessManager:
                 return False
 
             elif system == "Darwin":  # macOS
+                # Match the GUI binaries by exact process name. This server runs on
+                # KiCad's bundled Python inside KiCad.app, so a full-command-line
+                # match on "KiCad" would always find the server itself.
                 result = subprocess.run(
-                    ["pgrep", "-f", "KiCad|pcbnew"],
+                    ["pgrep", "-x", "kicad|pcbnew|eeschema"],
                     capture_output=True,
                     text=True,
                     stdin=subprocess.DEVNULL,

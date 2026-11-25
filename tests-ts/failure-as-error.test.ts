@@ -87,6 +87,7 @@ describe("backend failure reaches the client as isError", () => {
     const text = (result.content as { text: string }[])[0].text;
     expect(text).toContain("U9");
     expect(text).toContain("Symbol not found");
+    expect(text).toContain("placed: R1");
   });
 
   it("a batch that could not start is an error", async () => {

@@ -42,6 +42,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Batch labelling tools point to `autoplace_schematic_fields`.** Labels that
+  `batch_add_and_connect` and `batch_connect` put on pins can cover the
+  Reference/Value text placed earlier; both descriptions now say to run
+  `autoplace_schematic_fields` afterwards.
+
 - **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
   A DSN carries only net-class clearances; the board's `.kicad_dru` (custom
   rules such as isolation between voltage domains) and the `.kicad_pro`'s
@@ -177,6 +182,52 @@ All notable changes to the KiCAD MCP Server project are documented here.
   all the call sites use it. Table URIs pointing into a moved bundle are
   re-rooted onto the installed one, so the global stock tables keep working
   after the app moves.
+
+- **The test suite no longer runs against a KiCad you have open.** With KiCad
+  running, the interface's runtime IPC switch connected to it and tests ran
+  against the live session; two failed on macOS. `tests/conftest.py` now
+  defaults `KICAD_BACKEND` to `swig`; tests that exercise IPC already patch it.
+
+- **`batch_add_components` and `batch_add_and_connect` resolve references like
+  `add_schematic_component`.** After #570 the single tool numbered power
+  symbols and refused a non-power symbol without a reference, but the batch
+  tools still wrote `#PWR?` literally and placed a missing reference as `X?`.
+  Both now share `utils/power_reference.py`: a power symbol without a
+  reference, or with `#PWR?`, gets the next free `#PWRnn` (`PWR_FLAG`:
+  `#FLGnn`), each one in a batch its own number, and a non-power symbol
+  without one is a per-component error. `batch_add_and_connect` wires each
+  component's nets to the reference it was placed as (by list position), so
+  two power symbols sent as `#PWR?` no longer share one entry, and the nets of
+  a multi-unit part's units are merged instead of the last unit's replacing
+  the others. Both replies now list the placed references.
+
+- **`validate_schematic` names items nested inside `(sheet_instances ...)` (#524).**
+  A symbol pasted into the block -- the reproduction is a copy of a power
+  symbol hand-edited in -- is syntactically balanced, so the structure scan
+  passed it, and kicad-cli refused the file with a bare
+  `Failed to load schematic` and no position. `validate_schematic` now reports
+  each such item as an error with its line number, and warns when a placed
+  symbol's Reference property matches none of the references on the instance
+  paths its own project's hierarchy reaches for it -- only the current
+  project's `(project ...)` block counts, and only on paths the hierarchy
+  reaches, so a sheet used twice (a reference per use by design) or another
+  project's instance block no longer warns. Both checks have regression
+  tests: the nested-symbol fixture is built exactly as the maintainer
+  reproduced it, and a stale-Reference fixture covers the warning.
+
+- **`add_schematic_component` auto-picks the next free `#PWR` reference for power symbols (#524).**
+  Placing a power symbol (`power:GND`, …) without a reference, or with the
+  `#PWR?` placeholder, wrote the literal placeholder into the schematic,
+  so every power symbol placed that way ended up with the same unannotated
+  reference `#PWR?` — cloning a power symbol by hand was the only
+  workaround. (A lone `#PWR?` loads in KiCad; the duplicate references are
+  the problem.) The tool now allocates the next unused `#PWRnn` in the
+  project, counting every sheet and every instance path, writes it on the
+  Reference property and every instance entry, and reports it as
+  `component_reference`. `power:PWR_FLAG` gets the next free `#FLGnn`
+  instead. A non-power symbol placed without a reference is now an error:
+  the optional reference exists only so power symbols can omit it. An
+  explicit reference other than the placeholder behaves exactly as before.
 
 - **IPC tools that rewrite a footprint warn that KiCad drops data from it**
   (#569). `move_component`, `rotate_component`, `set_footprint_type` and
@@ -441,6 +492,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   and KiCad has no per-component annotation it could map to. Text on the
   board is `add_board_text`. The tool count is now 256.
 
+- **`edit_component` is auto-saved like other board edits.** It was missing
+  from `_BOARD_MUTATING_COMMANDS`, so a footprint swap or value change (also
+  through `replace_component`) reported success but reached the board file
+  only on an explicit `save_project`, unlike `place_component` or
+  `delete_component`.
+
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,
   the JSON-RPC schema declares `library` and `footprint`, and the handler
@@ -450,6 +507,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   found now says "Footprint not found: ..." instead of failing with a Python
   error, and a `Library:Footprint` name in another library than `library` is
   refused.
+
+- **`group_components` works: it creates a PCB group** (#407). The tool was
+  registered but no Python command answered it, so every call failed with
+  "unknown command". It now creates a `PCB_GROUP` named `groupName` holding
+  the given footprints, and the board is auto-saved like other board edits.
+  Nothing is created when a reference isn't found (the reply names it) or a
+  footprint is already in a group, since KiCad allows only one (an unnamed
+  group is named by its uuid).
 
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and
@@ -465,6 +530,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   for `*` and got the first 20 footprints, whatever it asked for. `pattern`
   still takes precedence, then `query`, then `search_term`.
 
+- **`replace_component` works: it is now an alias of `edit_component`**
+  (#407). The tool was registered but no Python command answered it, so every
+  call failed with "unknown command". It now sends `edit_component`: the
+  footprint is `newFootprint`, or `newComponentId` when that is in
+  `Library:Footprint` form, and `newValue` becomes the value. Any other
+  `newComponentId` without `newFootprint` is refused with a message instead
+  of being guessed at. A blank `newFootprint` or `newValue` counts as absent.
+
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a
   pattern that stopped at the first `)`, the one closing `(at x y angle)`, so
@@ -475,6 +548,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   sets them, ignores same-named properties inside units, adds a new property
   before the symbol's units in every layout, and refuses to write when the
   edit would unbalance the file or leave the property outside the symbol.
+
+- **macOS: KiCad process detection no longer matches this server.** The server
+  runs on KiCad's bundled Python inside `KiCad.app`, so `pgrep -f "KiCad|pcbnew"`
+  always found the server itself and `is_running()` was True with KiCad
+  closed. It now matches the `kicad`, `pcbnew` and `eeschema` processes by
+  exact name, as the Linux branch does.
 
 ## [2.9.0] - 2026-11-11
 

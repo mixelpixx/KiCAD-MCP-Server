@@ -28,6 +28,7 @@ from commands.wire_manager import WireManager
 from utils.board_items import clone_footprint
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.power_reference import resolve_placement_reference
 from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
@@ -297,18 +298,6 @@ class SchematicHandlersMixin:
             comp_type = component.get("type", "R")
             library = component.get("library", "Device")
             reference = component.get("reference", "X?")
-            value = component.get("value", comp_type)
-            footprint = component.get("footprint", "")
-            x = component.get("x", 0)
-            y = component.get("y", 0)
-            unit = component.get("unit", 1)
-            # The TS layer puts these inside `component` alongside x/y/unit
-            # (src/tools/schematic.ts). Dropping them here silently ignored the
-            # documented angle/mirrorY arguments, so every symbol landed at 0°
-            # and callers had to follow up with rotate_schematic_component.
-            angle = component.get("angle", 0)
-            mirror_y = bool(component.get("mirrorY", False))
-
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
             # (contains sym-lib-table or a .kicad_pro file).  Schematics stored in a
@@ -322,6 +311,28 @@ class SchematicHandlersMixin:
                     break
 
             loader = DynamicSymbolLoader(project_path=derived_project_path)
+
+            # Power symbols (#524) placed without a reference, or with the
+            # "#PWR?" placeholder, get the next unused #PWRnn in the project
+            # (power:PWR_FLAG: #FLGnn); a non-power symbol without a
+            # reference is refused. Shared with the batch tools.
+            reference, reference_error = resolve_placement_reference(
+                loader, schematic_file, library, comp_type, reference
+            )
+            if reference_error is not None:
+                return {"success": False, "message": reference_error}
+            value = component.get("value", comp_type)
+            footprint = component.get("footprint", "")
+            x = component.get("x", 0)
+            y = component.get("y", 0)
+            unit = component.get("unit", 1)
+            # The TS layer puts these inside `component` alongside x/y/unit
+            # (src/tools/schematic.ts). Dropping them here silently ignored the
+            # documented angle/mirrorY arguments, so every symbol landed at 0°
+            # and callers had to follow up with rotate_schematic_component.
+            angle = component.get("angle", 0)
+            mirror_y = bool(component.get("mirrorY", False))
+
             loader.add_component(
                 schematic_file,
                 library,

@@ -30,6 +30,7 @@ from commands.schematic_text_utils import (
     _straight_ahead,
 )
 from commands.wire_manager import REPLACE_TOLERANCE_MM, WireManager
+from utils.power_reference import resolve_placement_reference
 from utils.symbol_instances import add_missing_instances, instance_report
 
 logger = logging.getLogger("kicad_interface")
@@ -115,11 +116,12 @@ class SchematicBatchCommands:
             results: List[Dict[str, Any]] = []
             errors: List[Dict[str, Any]] = []
 
-            for comp in components:
+            for index, comp in enumerate(components):
                 symbol = comp.get("symbol", "")
                 if ":" not in symbol:
                     errors.append(
                         {
+                            "index": index,
                             "symbol": symbol,
                             "reference": comp.get("reference", "?"),
                             "error": "symbol must be 'Library:SymbolName'",
@@ -128,7 +130,26 @@ class SchematicBatchCommands:
                     continue
 
                 library, sym_name = symbol.split(":", 1)
-                reference = comp.get("reference", "X?")
+                # Same rule as add_schematic_component (#524): a power symbol
+                # without a reference, or with "#PWR?", gets the next free
+                # #PWRnn (PWR_FLAG: #FLGnn). Each placement is written before
+                # the next is resolved, so a batch of them gets distinct
+                # numbers. Any other symbol needs a reference; it used to be
+                # placed silently as "X?".
+                reference, reference_error = resolve_placement_reference(
+                    loader, schematic_file, library, sym_name, comp.get("reference")
+                )
+                if reference_error is not None:
+                    errors.append(
+                        {
+                            "index": index,
+                            "symbol": symbol,
+                            "reference": comp.get("reference") or "?",
+                            "error": reference_error,
+                        }
+                    )
+                    continue
+                assert reference is not None
                 value = comp.get("value", sym_name)
                 footprint = comp.get("footprint", "")
                 pos = comp.get("position", {})
@@ -158,6 +179,7 @@ class SchematicBatchCommands:
                     )
 
                     entry: Dict[str, Any] = {
+                        "index": index,
                         "reference": reference,
                         "symbol": symbol,
                         "unit": unit,
@@ -224,7 +246,9 @@ class SchematicBatchCommands:
 
                 except Exception as e:
                     logger.error(f"Error adding {reference} ({symbol}): {e}")
-                    errors.append({"symbol": symbol, "reference": reference, "error": str(e)})
+                    errors.append(
+                        {"index": index, "symbol": symbol, "reference": reference, "error": str(e)}
+                    )
 
             # Placement already writes an instance entry for every use of this
             # sheet (#428). This fills in any symbol already on the sheet that
@@ -915,16 +939,24 @@ class SchematicBatchCommands:
                     "message": "components list is required and must be non-empty",
                 }
 
-            components_for_add = []
-            nets_per_ref: Dict[str, Any] = {}
-            for comp in raw_components:
-                components_for_add.append({k: v for k, v in comp.items() if k != "nets"})
-                if comp.get("nets"):
-                    nets_per_ref[comp.get("reference", "")] = comp["nets"]
-
+            components_for_add = [
+                {k: v for k, v in comp.items() if k != "nets"} for comp in raw_components
+            ]
             add_params = {k: v for k, v in params.items() if k != "components"}
             add_params["components"] = components_for_add
             add_result = self.batch_add_components(add_params)
+
+            # Nets follow each component by its position in the list, onto the
+            # reference it was actually placed as: a power symbol sent as
+            # "#PWR?" is placed as #PWRnn, and two of them must not share one
+            # entry. A component that failed to place has no nets to wire.
+            placed_as = {
+                entry["index"]: entry["reference"] for entry in add_result.get("added", [])
+            }
+            nets_per_ref: Dict[str, Any] = {}
+            for index, comp in enumerate(raw_components):
+                if comp.get("nets") and index in placed_as:
+                    nets_per_ref.setdefault(placed_as[index], {}).update(comp["nets"])
 
             connect_result: Dict[str, Any] = {
                 "placed": [],
