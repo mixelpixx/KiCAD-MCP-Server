@@ -59,7 +59,6 @@ pytestmark = [
 
 # zod-declared (or object-literal-sent) keys the Python handler never reads.
 KNOWN_ZOD_UNREAD: Dict[str, Set[str]] = {
-    "add_board_text": {"style"},
     "align_components": {"alignmentType", "referenceComponent"},
     "duplicate_component": {"count", "offset"},
     "list_libraries": {"search_paths"},

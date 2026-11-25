@@ -12,6 +12,10 @@ from utils.board_items import delete_board_item
 logger = logging.getLogger("kicad_interface")
 
 
+# The text styles add_board_text accepts (its zod schema's enum).
+TEXT_STYLES = ("normal", "italic", "bold")
+
+
 class BoardOutlineCommands:
     """Handles board outline operations"""
 
@@ -538,6 +542,13 @@ class BoardOutlineCommands:
             thickness = params.get("thickness", 0.15)
             rotation = params.get("rotation", 0)
             mirror = params.get("mirror", False)
+            style = params.get("style") or "normal"
+
+            if style not in TEXT_STYLES:
+                return {
+                    "success": False,
+                    "message": f"style must be one of {', '.join(TEXT_STYLES)}, got {style!r}",
+                }
 
             if not text or not position:
                 return {
@@ -584,6 +595,8 @@ class BoardOutlineCommands:
                 pcb_text.SetTextAngle(int(rotation * 10))
 
             pcb_text.SetMirrored(mirror)
+            pcb_text.SetBold(style == "bold")
+            pcb_text.SetItalic(style == "italic")
 
             # Add to board
             self.board.Add(pcb_text)
@@ -599,6 +612,7 @@ class BoardOutlineCommands:
                     "thickness": thickness,
                     "rotation": rotation,
                     "mirror": mirror,
+                    "style": style,
                 },
             }
 
