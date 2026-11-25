@@ -99,3 +99,33 @@ def test_unknown_layer_opens_no_plot_file(plotter, tmp_path):
     assert result["success"] is True, result
     assert result["files"]["gerber"] == ["F.Cu"]
     assert _plot_sequence(plotter) == _expected_sequence(["F.Cu"])
+
+
+# --- includeDrillFiles (#407) ------------------------------------------------
+# The JSON-RPC schema declares includeDrillFiles; the handler read only
+# generateDrillFiles, so a JSON-RPC client could not turn the drill files off.
+
+
+def _drill_requested(params, tmp_path) -> bool:
+    commands = _commands()
+    commands._find_kicad_cli = MagicMock(return_value=None)
+    result = commands.export_gerber({"outputDir": str(tmp_path), "layers": ["F.Cu"], **params})
+    assert result["success"] is True, result
+    return commands._find_kicad_cli.called
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "params, expected",
+    [
+        ({}, True),
+        ({"includeDrillFiles": False}, False),
+        ({"includeDrillFiles": True}, True),
+        ({"generateDrillFiles": False}, False),
+        # The Node tool's name wins when both are sent.
+        ({"generateDrillFiles": True, "includeDrillFiles": False}, True),
+        ({"generateDrillFiles": False, "includeDrillFiles": True}, False),
+    ],
+)
+def test_include_drill_files_is_read(plotter, tmp_path, params, expected):
+    assert _drill_requested(params, tmp_path) is expected
