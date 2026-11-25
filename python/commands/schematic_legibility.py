@@ -28,22 +28,10 @@ import re
 from pathlib import Path
 
 import sexpdata
+from commands.schematic_paper import PAPER_DIMENSIONS_MM
 from commands.schematic_text_metrics import LABEL_FLAG, text_height, text_width
 
 S = sexpdata.Symbol
-PAPER = {
-    "A5": (210, 148),
-    "A4": (297, 210),
-    "A3": (420, 297),
-    "A2": (594, 420),
-    "A1": (841, 594),
-    "A0": (1189, 841),
-    "A": (279.4, 215.9),
-    "B": (431.8, 279.4),
-    "C": (558.8, 431.8),
-    "D": (863.6, 558.8),
-    "E": (1117.6, 863.6),
-}
 
 
 def find(node, tag):
@@ -441,7 +429,7 @@ def collect(path):
     if name == "User" and len(paper) >= 4:
         pw, ph = float(paper[2]), float(paper[3])
     else:
-        pw, ph = PAPER.get(name, (297, 210))
+        pw, ph = PAPER_DIMENSIONS_MM.get(name, PAPER_DIMENSIONS_MM["A4"])
     if paper and S("portrait") in paper:
         pw, ph = ph, pw
     libs = {}

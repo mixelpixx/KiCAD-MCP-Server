@@ -173,6 +173,7 @@ export const toolCategories: ToolCategory[] = [
       "run_erc",
       "list_schematic_rectangles",
       "set_schematic_rectangle",
+      "set_schematic_paper",
     ],
   },
   {

@@ -6,6 +6,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Tools
 
+- **`set_schematic_paper`: sheet paper size.** New schematics were always A4
+  and no tool could change it, so a design that outgrew the sheet ran off the
+  page. Sets size (A5-A0, A-E, USLetter, USLegal, USLedger, any case) and
+  orientation on an existing sheet, rewriting only the root `(paper ...)`
+  token; an unknown size is an error that lists the valid ones and leaves the
+  file unchanged. `create_project` and `create_schematic` take the same
+  `paper` and `portrait` options, checked before any file is written. The
+  paper sizes now live in one table, so `check_schematic_legibility` frames
+  USLetter, USLegal and USLedger sheets at their own size instead of A4.
+
 - **`check_schematic_legibility`: what a reader trips over.** ERC and a
   netlist prove a sheet is connected; they say nothing about whether a person
   can read it. This boxes every symbol body, visible reference and value,

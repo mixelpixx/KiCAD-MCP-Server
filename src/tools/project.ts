@@ -13,8 +13,13 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
     {
       path: z.string().describe("Project directory path"),
       name: z.string().describe("Project name"),
+      paper: z
+        .string()
+        .optional()
+        .describe("Schematic paper size (default A4): A5-A0, A-E, USLetter, USLegal, USLedger"),
+      portrait: z.boolean().optional().describe("Portrait schematic sheet (default: landscape)"),
     },
-    async (args: { path: string; name: string }) => {
+    async (args: { path: string; name: string; paper?: string; portrait?: boolean }) => {
       const result = await callKicadScript("create_project", args);
       return {
         content: [

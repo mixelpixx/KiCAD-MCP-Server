@@ -18,20 +18,6 @@ _KICAD_INTERNAL_PROPS = frozenset(
     {"ki_keywords", "ki_description", "ki_fp_filters", "ki_locked", "ki_model"}
 )
 
-# Paper sizes (landscape, mm). Border frame is ~12.7mm from each edge.
-_PAPER_DIMS = {
-    "A4": (297.0, 210.0),
-    "A3": (420.0, 297.0),
-    "A2": (594.0, 420.0),
-    "A1": (841.0, 594.0),
-    "A0": (1189.0, 841.0),
-    "A": (279.4, 215.9),
-    "B": (431.8, 279.4),
-    "C": (558.8, 431.8),
-    "D": (863.6, 558.8),
-    "E": (1117.6, 863.6),
-}
-
 
 def _find_matching_paren(s: str, start: int) -> int:
     """Return index of the ')' matching the '(' at position *start*, or -1.
@@ -278,21 +264,6 @@ def _extract_property_visible(block_text: str, property_name: str) -> bool:
         return True
     prop_sub = block_text[m.start() : end + 1]
     return "(hide yes)" not in prop_sub and "(hide)" not in prop_sub
-
-
-def _get_sheet_usable_area(schematic_path) -> Tuple[float, float, float, float]:
-    """Return (left, top, right, bottom) usable bounds in mm for the sheet's paper size."""
-    border = 12.7
-    width, height = 297.0, 210.0  # default A4
-    try:
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read(4096)
-        m = re.search(r'\(paper\s+"([^"]+)"', content)
-        if m and m.group(1).strip() in _PAPER_DIMS:
-            width, height = _PAPER_DIMS[m.group(1).strip()]
-    except Exception:
-        pass
-    return (border, border, width - border, height - border)
 
 
 def _apply_visibility(block: str, property_name: str, visible: bool) -> str:

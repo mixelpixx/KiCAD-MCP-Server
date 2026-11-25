@@ -42,6 +42,14 @@ PROJECT_TOOLS = [
                     "type": "string",
                     "description": "Optional path to template board file to copy settings from",
                 },
+                "paper": {
+                    "type": "string",
+                    "description": "Schematic paper size (default A4): A5, A4, A3, A2, A1, A0, A, B, C, D, E, USLetter, USLegal, USLedger",
+                },
+                "portrait": {
+                    "type": "boolean",
+                    "description": "Portrait schematic sheet (default: landscape)",
+                },
             },
             "required": ["projectName"],
         },
@@ -2638,8 +2646,36 @@ SCHEMATIC_TOOLS = [
                     "description": "Path for the new schematic file (.kicad_sch)",
                 },
                 "title": {"type": "string", "description": "Schematic title"},
+                "paper": {
+                    "type": "string",
+                    "description": "Schematic paper size (default A4): A5, A4, A3, A2, A1, A0, A, B, C, D, E, USLetter, USLegal, USLedger",
+                },
+                "portrait": {
+                    "type": "boolean",
+                    "description": "Portrait schematic sheet (default: landscape)",
+                },
             },
             "required": ["filename"],
+        },
+    },
+    {
+        "name": "set_schematic_paper",
+        "title": "Set Schematic Paper Size",
+        "description": "Sets a schematic sheet's paper size and orientation (KiCad Page Settings). New schematics start on A4. Changes no connectivity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to the .kicad_sch file"},
+                "paper": {
+                    "type": "string",
+                    "description": "Paper size, any case: A5, A4, A3, A2, A1, A0, A, B, C, D, E, USLetter, USLegal, USLedger",
+                },
+                "portrait": {
+                    "type": "boolean",
+                    "description": "Portrait orientation (default: landscape)",
+                },
+            },
+            "required": ["schematicPath", "paper"],
         },
     },
     {

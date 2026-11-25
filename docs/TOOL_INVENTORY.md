@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.9.0
-**Tools registered on the server:** 261
-**Tools indexed for keyword discovery:** 261 in 21 categories
-**Last updated:** 2026-11-21
+**Tools registered on the server:** 262
+**Tools indexed for keyword discovery:** 262 in 21 categories
+**Last updated:** 2026-11-23
 
 ## How to read this document
 
@@ -201,7 +201,7 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (49 tools)
+## Schematic (50 tools)
 
 _Source: `src/tools/schematic.ts`_
 
@@ -252,6 +252,7 @@ _Source: `src/tools/schematic.ts`_
 | `get_net_at_point`                    | Get the net name at an XY coordinate                                                                                                                 | `schematic`             |
 | `add_schematic_hierarchical_label`    | Add hierarchical label for multi-sheet connections                                                                                                   | `schematic_hierarchy`   |
 | `list_schematic_texts`                | List all text annotations (with optional filter)                                                                                                     | `schematic`             |
+| `set_schematic_paper`                 | Set the sheet paper size (A4, A3, USLetter, ...) and orientation                                                                                     | `schematic`             |
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
 | `list_schematic_rectangles`           | List rectangles drawn on a sheet (corners, stroke, fill, uuid)                                                                                       | `schematic`             |
 | `set_schematic_rectangle`             | Create, edit or delete a rectangle drawn on a sheet                                                                                                  | `schematic`             |
@@ -545,7 +546,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `routing.ts`             | Routing                                | 19      |
 | `design-rules.ts`        | Design Rules and DRC                   | 9       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
-| `schematic.ts`           | Schematic                              | 49      |
+| `schematic.ts`           | Schematic                              | 50      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
 | `variants.ts`            | Assembly Variants                      | 5       |
@@ -566,11 +567,11 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **261** |
+| **Total**                |                                        | **262** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 261 of the 261 registered tools.
+These are the categories `search_tools` searches. They cover 262 of the 262 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -578,7 +579,7 @@ These are the categories `search_tools` searches. They cover 261 of the 261 regi
 | `component`                | 23            |
 | `export`                   | 27            |
 | `drc`                      | 10            |
-| `schematic`                | 38            |
+| `schematic`                | 39            |
 | `library`                  | 9             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
@@ -595,6 +596,6 @@ These are the categories `search_tools` searches. They cover 261 of the 261 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **261**       |
+| **Indexed total**          | **262**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **261**       |
+| **Registered total**       | **262**       |

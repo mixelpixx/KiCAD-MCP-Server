@@ -13,8 +13,13 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
     {
       name: z.string().describe("Schematic name"),
       path: z.string().optional().describe("Optional path"),
+      paper: z
+        .string()
+        .optional()
+        .describe("Paper size (default A4): A5-A0, A-E, USLetter, USLegal, USLedger"),
+      portrait: z.boolean().optional().describe("Portrait orientation (default: landscape)"),
     },
-    async (args: { name: string; path?: string }) => {
+    async (args: { name: string; path?: string; paper?: string; portrait?: boolean }) => {
       const result = await callKicadScript("create_schematic", args);
       return {
         content: [
@@ -2289,6 +2294,37 @@ edit_schematic_component and set its value to an empty string.`,
           },
         ],
         isError: true,
+      };
+    },
+  );
+
+  // Set the sheet's paper size
+  server.tool(
+    "set_schematic_paper",
+    "Set a schematic sheet's paper size and orientation (Page Settings in KiCad). " +
+      "New schematics start on A4; use A3 or larger when the parts do not fit. " +
+      "Changes no connectivity.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      paper: z
+        .string()
+        .describe(
+          "Paper size, any case: A5, A4, A3, A2, A1, A0, A, B, C, D, E, USLetter, USLegal, USLedger",
+        ),
+      portrait: z.boolean().optional().describe("Portrait orientation (default: landscape)"),
+    },
+    async (args: { schematicPath: string; paper: string; portrait?: boolean }) => {
+      const result = await callKicadScript("set_schematic_paper", args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: result.success
+              ? result.message
+              : `Failed to set paper size: ${result.message || "Unknown error"}`,
+          },
+        ],
+        ...(result.success ? {} : { isError: true }),
       };
     },
   );

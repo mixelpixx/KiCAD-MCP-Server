@@ -185,6 +185,14 @@ def test_paper_size_and_orientation(tmp_path):
     assert "outside frame" in kinds(f)
 
 
+def test_us_paper_sizes_use_their_own_frame(tmp_path):
+    # USLedger is B's size (431.8 x 279.4), not A4: a label at x = 350 is inside.
+    body = '(label "EDGE" (at 350 100 0) (effects (font (size 1.27 1.27)) (justify left)))'
+    for paper in ("B", "USLedger"):
+        result = check_legibility(sheet(tmp_path, body, paper=paper))
+        assert result["page"] == {"width": 431.8, "height": 279.4}
+        assert result["total"] == 0
+
 def test_upside_down_field(tmp_path):
     f = sheet(
         tmp_path,
