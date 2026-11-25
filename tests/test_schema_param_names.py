@@ -76,7 +76,6 @@ KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
     "export_pdf": {"colorMode"},
     "place_component_array": {"footprint", "startNumber", "startX", "startY"},
     "route_trace": {"netName", "points"},
-    "run_drc": {"includeWarnings"},
 }
 
 # TypeScript tools that call a Python command with no entry in command_routes:

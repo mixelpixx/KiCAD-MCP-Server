@@ -465,6 +465,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - `batch_move_components` and `batch_set_schematic_property_positions` also
     get the long timeout, so a very large sheet can't be cut off part-way.
 
+- **`run_drc` reads the `includeWarnings` its JSON-RPC schema declares**
+  (#407). It was never read, so warnings were always reported. With
+  `includeWarnings: false`, kicad-cli is run with `--severity-error`, so the
+  counts, the violations file and the text report hold errors only. The
+  default is unchanged.
+
 - **`list_library_footprints` reads the `filter` and `limit` its schema
   declares** (#407). Both were ignored, so a client asking for the first 10
   QFN footprints got the whole library. `filter` keeps names containing the

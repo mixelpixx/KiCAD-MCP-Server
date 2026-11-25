@@ -11,6 +11,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from commands.design_rules import DesignRuleCommands  # noqa: E402
@@ -202,3 +204,21 @@ def test_parity_without_a_schematic_warns(tmp_path, monkeypatch):
 def test_flags_respect_refill_support():
     assert DesignRuleCommands._drc_flags({}, refill_supported=False) == []
     assert DesignRuleCommands._drc_flags({"schematicParity": True}, False) == ["--schematic-parity"]
+
+
+@pytest.mark.parametrize(
+    "params, severity_flags",
+    [
+        ({}, []),
+        ({"includeWarnings": True}, []),
+        ({"includeWarnings": False}, ["--severity-error"]),
+    ],
+)
+def test_include_warnings_false_asks_kicad_cli_for_errors_only(params, severity_flags):
+    """#407: the JSON-RPC schema declares includeWarnings; it was never read, so
+    warnings were always reported. kicad-cli reports errors and warnings by
+    default, and --severity-error restricts it to errors."""
+    from commands.design_rules import DesignRuleCommands
+
+    flags = DesignRuleCommands._drc_flags({"refillZones": False, **params})
+    assert flags == severity_flags
