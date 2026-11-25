@@ -72,7 +72,6 @@ KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
     "add_schematic_component": {"symbol"},
     "align_components": {"direction"},
     "duplicate_component": {"offsetX", "offsetY", "sourceReference"},
-    "export_gerber": {"includeDrillFiles"},
     "export_pdf": {"colorMode"},
     "place_component_array": {"footprint", "startNumber", "startX", "startY"},
     "route_trace": {"netName", "points"},

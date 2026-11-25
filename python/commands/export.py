@@ -52,7 +52,11 @@ class ExportCommands:
             output_dir = params.get("outputDir")
             layers = params.get("layers", [])
             use_protel_extensions = params.get("useProtelExtensions", False)
-            generate_drill_files = params.get("generateDrillFiles", True)
+            # "generateDrillFiles" is the Node tool's name, "includeDrillFiles"
+            # the JSON-RPC schema's.
+            generate_drill_files = params.get(
+                "generateDrillFiles", params.get("includeDrillFiles", True)
+            )
             generate_map_file = params.get("generateMapFile", False)
             use_aux_origin = params.get("useAuxOrigin", False)
 

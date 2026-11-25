@@ -172,6 +172,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`export_gerber` reads the `includeDrillFiles` its JSON-RPC schema
+  declares** (#407). The handler read only `generateDrillFiles`, so a
+  JSON-RPC client could not turn the drill files off. `generateDrillFiles`
+  still wins when both are sent.
+
 - **The test suite no longer runs against a KiCad you have open.** With KiCad
   running, the interface's runtime IPC switch connected to it and tests ran
   against the live session; two failed on macOS. `tests/conftest.py` now
