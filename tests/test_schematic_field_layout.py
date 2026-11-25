@@ -33,6 +33,7 @@ from commands.schematic_text_utils import (  # noqa: E402
     _get_sheet_usable_area,
     _move_property_in_block,
     effective_field_justification,
+    is_multiple_of_90,
     sheet_angle_to_stored_angle,
     stored_angle_to_drawn_angle,
 )
@@ -643,3 +644,68 @@ class TestAutoplaceRotatedSymbols:
         # Independent check via schematic_legibility: all fields must be legible and horizontal.
         leg = check_legibility(f)
         assert leg["total"] == 0, leg
+
+
+class TestAngleValidation:
+    """Tests for field angle multiple-of-90 validation."""
+
+    def test_is_multiple_of_90(self):
+        for valid in (0, 90, 180, 270, 360, -90, -180, -270, 90.0, 0.0):
+            assert is_multiple_of_90(valid) is True, f"Expected {valid} to be valid multiple of 90"
+
+        for invalid in (
+            45,
+            30,
+            12.5,
+            -45,
+            89.0,
+            91.0,
+            False,
+            True,
+            float("inf"),
+            float("-inf"),
+            float("nan"),
+            "abc",
+            None,
+            object(),
+        ):
+            assert is_multiple_of_90(invalid) is False, f"Expected {invalid} to be rejected"
+
+    def test_set_schematic_property_position_rejects_non_multiple_of_90(self, tmp_path):
+        f = tmp_path / "test_angle.kicad_sch"
+        f.write_text(MINIMAL_SCH, encoding="utf-8")
+        c = SchematicFieldLayoutCommands()
+        res = c.set_schematic_property_position(
+            {
+                "schematicPath": str(f),
+                "reference": "R1",
+                "property": "Reference",
+                "x": 100.0,
+                "y": 50.0,
+                "angle": 45,
+            }
+        )
+        assert res["success"] is False
+        assert "multiple of 90 degrees" in res["message"]
+
+    def test_batch_set_schematic_property_positions_rejects_non_multiple_of_90(self, tmp_path):
+        f = tmp_path / "test_batch_angle.kicad_sch"
+        f.write_text(MINIMAL_SCH, encoding="utf-8")
+        c = SchematicFieldLayoutCommands()
+        res = c.batch_set_schematic_property_positions(
+            {
+                "schematicPath": str(f),
+                "updates": [
+                    {
+                        "reference": "R1",
+                        "property": "Reference",
+                        "x": 100.0,
+                        "y": 50.0,
+                        "angle": 45,
+                    }
+                ],
+            }
+        )
+        assert res["success"] is False
+        assert res["failed_count"] == 1
+        assert "multiple of 90 degrees" in res["failed"][0]["reason"]

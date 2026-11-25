@@ -9,7 +9,7 @@ them here avoids those modules importing helpers from one another.
 import math
 import re
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import sexpdata
 from utils.sexpr_format import QUOTED_VALUE, match_paren, unescape_sexpr_string
@@ -190,6 +190,23 @@ def _extract_property_justify(block_text: str, property_name: str) -> Tuple[str,
             return "center", "center"
 
     return "center", "center"
+
+
+def is_multiple_of_90(angle: Any) -> bool:
+    """Return True if *angle* is a multiple of 90 degrees (e.g. 0, 90, 180, 270, -90).
+
+    Schematic property fields in KiCad are only drawn horizontally or vertically.
+    """
+    if isinstance(angle, bool):
+        return False
+    try:
+        val = float(angle)
+        if not math.isfinite(val):
+            return False
+    except (TypeError, ValueError):
+        return False
+    rem = abs(val) % 90.0
+    return rem < 1e-6 or abs(rem - 90.0) < 1e-6
 
 
 def sheet_angle_to_stored_angle(

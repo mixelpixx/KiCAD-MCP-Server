@@ -158,4 +158,52 @@ describe("schematic property position MCP schemas (#520)", () => {
     });
     expect(partialRes.isError).toBeFalsy();
   });
+
+  it("rejects angle values that are not multiples of 90 degrees", async () => {
+    const { client } = await connectWithSpy({ success: true });
+
+    // Single move with 45 degrees
+    const resSingle = await client.callTool({
+      name: "set_schematic_property_position",
+      arguments: {
+        schematicPath: "/tmp/test.kicad_sch",
+        reference: "R1",
+        property: "Reference",
+        x: 10,
+        y: 10,
+        angle: 45,
+      },
+    });
+    expect(resSingle.isError).toBe(true);
+
+    // Batch move with non-multiple of 90
+    const resBatch = await client.callTool({
+      name: "batch_set_schematic_property_positions",
+      arguments: {
+        schematicPath: "/tmp/test.kicad_sch",
+        updates: [{ reference: "R1", property: "Reference", x: 10, y: 10, angle: 30 }],
+      },
+    });
+    expect(resBatch.isError).toBe(true);
+  });
+
+  it("accepts multiples of 90 degrees (0, 90, 180, 270, -90)", async () => {
+    const { client, spy } = await connectWithSpy({ success: true });
+
+    for (const validAngle of [0, 90, 180, 270, -90]) {
+      const res = await client.callTool({
+        name: "set_schematic_property_position",
+        arguments: {
+          schematicPath: "/tmp/test.kicad_sch",
+          reference: "R1",
+          property: "Reference",
+          x: 10,
+          y: 10,
+          angle: validAngle,
+        },
+      });
+      expect(res.isError).toBeFalsy();
+    }
+    expect(spy).toHaveBeenCalledTimes(5);
+  });
 });

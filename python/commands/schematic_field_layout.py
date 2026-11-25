@@ -31,6 +31,7 @@ from commands.schematic_text_utils import (
     _move_property_in_block,
     _normalize_angle,
     effective_field_justification,
+    is_multiple_of_90,
     sheet_angle_to_stored_angle,
     stored_angle_to_drawn_angle,
 )
@@ -203,6 +204,11 @@ class SchematicFieldLayoutCommands:
                 }
             if property_name not in ("Reference", "Value"):
                 return {"success": False, "message": "property must be 'Reference' or 'Value'"}
+            if angle is not None and not is_multiple_of_90(angle):
+                return {
+                    "success": False,
+                    "message": f"angle must be a multiple of 90 degrees (got {angle})",
+                }
 
             sch_path = Path(schematic_path)
             if not sch_path.exists():
@@ -299,6 +305,15 @@ class SchematicFieldLayoutCommands:
                             "reference": reference,
                             "property": property_name,
                             "reason": "property must be 'Reference' or 'Value'",
+                        }
+                    )
+                    continue
+                if angle is not None and not is_multiple_of_90(angle):
+                    failed.append(
+                        {
+                            "reference": reference,
+                            "property": property_name,
+                            "reason": f"angle must be a multiple of 90 degrees (got {angle})",
                         }
                     )
                     continue
