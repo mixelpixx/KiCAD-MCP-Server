@@ -948,12 +948,17 @@ class DesignRuleCommands:
         It is only passed when this kicad-cli supports it (KiCad 10+).
         ``schematicParity`` (default False) adds the schematic-vs-board check; it needs the
         project's schematic next to the board.
+        ``includeWarnings`` (default True, from the JSON-RPC schema): False passes
+        ``--severity-error`` so only errors are reported; kicad-cli reports errors
+        and warnings by default.
         """
         flags = []
         if params.get("refillZones", True) and refill_supported:
             flags.append("--refill-zones")
         if params.get("schematicParity", False):
             flags.append("--schematic-parity")
+        if params.get("includeWarnings", True) is False:
+            flags.append("--severity-error")
         return flags
 
     @classmethod
