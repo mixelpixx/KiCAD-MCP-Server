@@ -42,7 +42,7 @@ The following MCP commands have IPC handlers:
 | `query_traces`             | `_ipc_query_traces`             | Implemented          |
 | `get_nets_list`            | `_ipc_get_nets_list`            | Implemented          |
 | `add_copper_pour`          | `_ipc_add_copper_pour`          | Implemented          |
-| `add_copper_keepout`       | `_ipc_add_copper_keepout`       | IPC only             |
+| `add_copper_keepout`       | `_ipc_add_copper_keepout`       | IPC implemented (no SWIG fallback)             |
 | `refill_zones`             | `_ipc_refill_zones`             | Implemented          |
 | `add_text`                 | `_ipc_add_text`                 | Implemented          |
 | `add_board_text`           | `_ipc_add_text`                 | Implemented          |
@@ -67,7 +67,7 @@ The following MCP commands have IPC handlers:
 - Auto-detect socket path (`/tmp/kicad/api.sock`)
 - Version checking and validation
 - Auto-fallback to SWIG when IPC unavailable
-- Runtime reconnect from SWIG to IPC when KiCAD starts after MCP
+- Runtime reconnect from SWIG to IPC when KiCAD starts after MCP, provided no project session is pinned.
 - Change notification callbacks
 
 **Board Operations:**
@@ -132,7 +132,7 @@ pip install kicad-python
 ### Runtime Backend Selection
 
 At startup, the server attempts IPC first when `KICAD_BACKEND` is `auto` or
-`ipc`. If KiCAD is not running yet, `auto` mode falls back to SWIG so file-based
+`ipc`. If KiCAD is not running yet, `auto` mode SWIG fallback (IPC unsupported) so file-based
 operations can still work.
 
 IPC-capable board tools now retry the IPC connection at runtime. This means the
