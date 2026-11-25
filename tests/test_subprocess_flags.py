@@ -10,7 +10,10 @@ which is ``CREATE_NO_WINDOW`` on win32 and a no-op elsewhere, so the guard
 runs on every OS in CI, not only on Windows.
 
 This test reads the source rather than running on Windows: it parses each
-file and checks the ``creationflags`` keyword of every subprocess call.
+file and checks the ``creationflags`` keyword of every subprocess call. The
+scan only sees calls spelled ``subprocess.<func>(...)``, so ``python/`` must
+not import subprocess functions by name or under an alias either; that also
+keeps the stdin guard in ``test_subprocess_stdin.py`` from missing a call.
 """
 
 import ast
@@ -19,11 +22,12 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import utils.subprocess_flags as sf
 
 SRC = Path(__file__).resolve().parent.parent / "python"
 HELPER = "windows_no_console_flags"
+# Same set as tests/test_subprocess_stdin.py, so the two guards stay in step.
+FUNCS = {"run", "Popen", "call", "check_call", "check_output"}
 
 
 def _uses_helper(value) -> bool:
@@ -48,7 +52,7 @@ def _offenders(source: str, rel: str = "<snippet>"):
         fn = node.func
         if not (
             isinstance(fn, ast.Attribute)
-            and fn.attr in ("run", "Popen")
+            and fn.attr in FUNCS
             and isinstance(fn.value, ast.Name)
             and fn.value.id == "subprocess"
         ):
@@ -68,28 +72,60 @@ def _all_offenders():
 
 def test_every_subprocess_call_uses_no_console_flags():
     offenders = _all_offenders()
-    assert not offenders, (
-        "subprocess calls that flash a console window on Windows:\\n" + "\\n".join(offenders)
+    assert not offenders, "subprocess calls that flash a console window on Windows:\n" + "\n".join(
+        offenders
     )
+
+
+def _hidden_imports(source: str, rel: str = "<snippet>"):
+    """Imports that would let a subprocess call bypass the ``subprocess.`` scan."""
+    out = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            names = ", ".join(a.name for a in node.names)
+            out.append(f"{rel}:{node.lineno} from subprocess import {names}")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "subprocess" and alias.asname not in (None, "subprocess"):
+                    out.append(f"{rel}:{node.lineno} import subprocess as {alias.asname}")
+    return out
+
+
+def test_no_subprocess_import_hides_a_call():
+    out = []
+    for f in sorted(SRC.rglob("*.py")):
+        out.extend(_hidden_imports(f.read_text(encoding="utf-8"), str(f.relative_to(SRC))))
+    assert not out, (
+        "use `import subprocess` and call subprocess.<func>(...) so the console and"
+        " stdin guards see the call:\n" + "\n".join(out)
+    )
+
+
+def test_the_import_scan_sees_hidden_imports():
+    assert _hidden_imports("from subprocess import run\n")
+    assert _hidden_imports("from subprocess import Popen, PIPE\n")
+    assert _hidden_imports("import subprocess as sp\n")
+    assert not _hidden_imports("import subprocess\n")
 
 
 def test_the_scan_sees_bare_calls():
     """The scanner itself: bare calls are flagged, helper calls pass."""
     assert _offenders('import subprocess\nsubprocess.run(["x"], capture_output=True)\n')
+    assert _offenders('import subprocess\nsubprocess.check_output(["x"], stdin=None)\n')
     assert not _offenders(
         "import subprocess\n"
         "from utils.subprocess_flags import windows_no_console_flags\n"
-        "subprocess.run([\"x\"], creationflags=windows_no_console_flags())\n"
+        'subprocess.run(["x"], creationflags=windows_no_console_flags())\n'
     )
     assert not _offenders(
         "import subprocess\n"
         "from utils.subprocess_flags import windows_no_console_flags\n"
-        "subprocess.Popen([\"x\"], creationflags=windows_no_console_flags(\n"
+        'subprocess.Popen(["x"], creationflags=windows_no_console_flags(\n'
         "    subprocess.CREATE_NEW_PROCESS_GROUP))\n"
     )
     assert _offenders(
         "import subprocess\n"
-        "subprocess.run([\"x\"], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)\n"
+        'subprocess.run(["x"], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)\n'
     )
 
 
