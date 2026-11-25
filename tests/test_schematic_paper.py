@@ -10,7 +10,12 @@ import pytest
 
 sys.modules.setdefault("pcbnew", MagicMock())
 
-from commands.schematic_paper import PAPER_SIZES, normalize_paper, set_paper  # noqa: E402
+from commands.schematic_paper import (  # noqa: E402
+    PAPER_DIMENSIONS_MM,
+    PAPER_SIZES,
+    normalize_paper,
+    set_paper,
+)
 from kicad_interface import KiCADInterface  # noqa: E402
 
 ROOT_UUID = "11111111-2222-3333-4444-555555555555"
@@ -53,6 +58,17 @@ def test_paper_sizes_are_kicads() -> None:
         "USLetter", "USLegal", "USLedger",
     )  # fmt: skip
 
+
+def test_every_paper_size_has_dimensions() -> None:
+    assert set(PAPER_DIMENSIONS_MM) == set(PAPER_SIZES)
+    for width, height in PAPER_DIMENSIONS_MM.values():
+        assert width > height  # landscape
+
+
+def test_us_paper_dimensions_are_kicads() -> None:
+    assert PAPER_DIMENSIONS_MM["USLetter"] == (279.4, 215.9)
+    assert PAPER_DIMENSIONS_MM["USLegal"] == (355.6, 215.9)
+    assert PAPER_DIMENSIONS_MM["USLedger"] == (431.8, 279.4)
 
 def test_normalize_paper_is_case_insensitive() -> None:
     assert normalize_paper("a3") == "A3"

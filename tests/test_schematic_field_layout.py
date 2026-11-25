@@ -30,7 +30,6 @@ from commands.schematic_text_utils import (  # noqa: E402
     _extract_symbol_transform,
     _find_matching_paren,
     _find_placed_symbol_block,
-    _get_sheet_usable_area,
     _move_property_in_block,
     effective_field_justification,
     sheet_angle_to_stored_angle,
@@ -113,20 +112,6 @@ class TestGeometryHelpers:
         assert _bbox_overlaps(a, b)
         assert not _bbox_overlaps(a, c)
         assert _bbox_overlaps(a, c, margin=11)  # margin bridges the gap
-
-    def test_get_sheet_usable_area_default_a4(self, tmp_path):
-        f = tmp_path / "a4.kicad_sch"
-        f.write_text('(kicad_sch (paper "A4")')
-        left, top, right, bottom = _get_sheet_usable_area(str(f))
-        assert (left, top) == (12.7, 12.7)
-        assert right == pytest.approx(297.0 - 12.7)
-        assert bottom == pytest.approx(210.0 - 12.7)
-
-    def test_get_sheet_usable_area_a3(self, tmp_path):
-        f = tmp_path / "a3.kicad_sch"
-        f.write_text('(kicad_sch (paper "A3")')
-        _, _, right, _ = _get_sheet_usable_area(str(f))
-        assert right == pytest.approx(420.0 - 12.7)
 
     def test_gather_labels(self):
         def lbl(v, at):

@@ -1,7 +1,7 @@
 """Schematic paper size: read and rewrite the root-level ``(paper ...)`` token."""
 
 from pathlib import Path
-from typing import Iterator, Optional, Tuple
+from typing import Dict, Iterator, Optional, Tuple
 
 # The named sizes KiCad's Page Settings dialog offers (custom "User" sizes excluded).
 PAPER_SIZES: Tuple[str, ...] = (
@@ -20,6 +20,26 @@ PAPER_SIZES: Tuple[str, ...] = (
     "USLegal",
     "USLedger",
 )
+
+
+# Each size's (width, height) in mm, landscape, as KiCad's Page Settings gives it.
+# A portrait sheet swaps the two.
+PAPER_DIMENSIONS_MM: Dict[str, Tuple[float, float]] = {
+    "A5": (210.0, 148.0),
+    "A4": (297.0, 210.0),
+    "A3": (420.0, 297.0),
+    "A2": (594.0, 420.0),
+    "A1": (841.0, 594.0),
+    "A0": (1189.0, 841.0),
+    "A": (279.4, 215.9),
+    "B": (431.8, 279.4),
+    "C": (558.8, 431.8),
+    "D": (863.6, 558.8),
+    "E": (1117.6, 863.6),
+    "USLetter": (279.4, 215.9),
+    "USLegal": (355.6, 215.9),
+    "USLedger": (431.8, 279.4),
+}
 
 
 def normalize_paper(name: str) -> Optional[str]:
@@ -72,6 +92,8 @@ def set_paper(path: Path, paper: str, portrait: bool = False) -> None:
         raise ValueError(f"Unknown paper size {paper!r}. Valid sizes: {', '.join(PAPER_SIZES)}")
     token = f'(paper "{size}"{" portrait" if portrait else ""})'
 
+    # read_text turns CRLF into LF and the write below keeps LF. KiCad writes LF,
+    # so a file KiCad saved comes back byte for byte apart from the paper token.
     text = path.read_text(encoding="utf-8")
     existing = _find_child(text, "paper")
     if existing:
