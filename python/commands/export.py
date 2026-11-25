@@ -189,7 +189,15 @@ class ExportCommands:
 
             output_path = params.get("outputPath")
             layers = params.get("layers", [])
-            black_and_white = params.get("blackAndWhite", False)
+            # "blackAndWhite" is the Node tool's name; the JSON-RPC schema
+            # declares "colorMode" ("color" / "black_white") instead.
+            color_mode = params.get("colorMode", "color")
+            if color_mode not in ("color", "black_white"):
+                return {
+                    "success": False,
+                    "message": f"colorMode must be 'color' or 'black_white', got {color_mode!r}",
+                }
+            black_and_white = params.get("blackAndWhite", color_mode == "black_white")
             frame_reference = params.get("frameReference", True)
             page_size = params.get("pageSize", "A4")
 

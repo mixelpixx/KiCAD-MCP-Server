@@ -143,3 +143,43 @@ def test_plot_file_name_falls_back_to_kicads_naming(tmp_path):
     name = _plot_file_name(plotter, board, str(tmp_path / "x.svg"), "x", "svg")
 
     assert name == str(tmp_path / "demo-x.svg")
+
+
+# --- colorMode (#407) ---------------------------------------------------------
+# The JSON-RPC schema declares colorMode ("color" / "black_white"); the handler
+# read only blackAndWhite, so a JSON-RPC client always got a colour PDF.
+
+
+def _pdf_black_and_white(plotter, tmp_path, params):
+    written = tmp_path / "demo-board.pdf"
+    written.write_bytes(b"%PDF")
+    plotter.GetPlotFileName.return_value = str(written)
+    result = _commands().export_pdf({"outputPath": str(tmp_path / "board.pdf"), **params})
+    assert result["success"] is True, result
+    return plotter.GetPlotOptions.return_value.SetBlackAndWhite.call_args.args[0]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "params, expected",
+    [
+        ({}, False),
+        ({"colorMode": "black_white"}, True),
+        ({"colorMode": "color"}, False),
+        ({"blackAndWhite": True}, True),
+        # The Node tool's name wins when both are sent.
+        ({"blackAndWhite": False, "colorMode": "black_white"}, False),
+    ],
+)
+def test_pdf_color_mode_is_read(plotter, tmp_path, params, expected):
+    assert _pdf_black_and_white(plotter, tmp_path, params) is expected
+
+
+@pytest.mark.unit
+def test_pdf_unknown_color_mode_is_refused(plotter, tmp_path):
+    result = _commands().export_pdf(
+        {"outputPath": str(tmp_path / "board.pdf"), "colorMode": "grey"}
+    )
+    assert result["success"] is False
+    assert "colorMode" in result["message"]
+    plotter.OpenPlotfile.assert_not_called()

@@ -177,6 +177,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   against the live session; two failed on macOS. `tests/conftest.py` now
   defaults `KICAD_BACKEND` to `swig`; tests that exercise IPC already patch it.
 
+- **`export_pdf` reads the `colorMode` its JSON-RPC schema declares**
+  (#407). The handler read only `blackAndWhite`, so a JSON-RPC client always
+  got a colour PDF. `colorMode: "black_white"` now plots black and white,
+  any value other than `color` or `black_white` is refused, and
+  `blackAndWhite` still wins when both are sent.
+
 - **`batch_add_components` and `batch_add_and_connect` resolve references like
   `add_schematic_component`.** After #570 the single tool numbered power
   symbols and refused a non-power symbol without a reference, but the batch
