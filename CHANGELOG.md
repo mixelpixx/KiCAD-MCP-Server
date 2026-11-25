@@ -487,6 +487,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   only on an explicit `save_project`, unlike `place_component` or
   `delete_component`.
 
+- **`add_board_text` applies its `style`** (#407). The schema offers
+  `normal` / `italic` / `bold` and the Node tool sends it, but neither the
+  SWIG nor the IPC handler read it, so every text came out regular. It now
+  sets bold or italic on both paths, and any other value is refused.
+
 - **`get_footprint_info` reads the library and footprint both schemas
   declare** (#407). The Node tool sends `library_name` and `footprint_name`,
   the JSON-RPC schema declares `library` and `footprint`, and the handler

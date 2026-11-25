@@ -1802,6 +1802,8 @@ class IPCBoardAPI(BoardAPI):
         layer: str = "F.SilkS",
         size: float = 1.0,
         rotation: float = 0,
+        bold: bool = False,
+        italic: bool = False,
     ) -> bool:
         """Add text to the board."""
         try:
@@ -1817,6 +1819,8 @@ class IPCBoardAPI(BoardAPI):
             board_text.value = text
             board_text.position = Vector2.from_xy(from_mm(x), from_mm(y))
             board_text.angle = Angle.from_degrees(rotation)
+            board_text.attributes.bold = bold
+            board_text.attributes.italic = italic
 
             # Set layer
             layer_map = {

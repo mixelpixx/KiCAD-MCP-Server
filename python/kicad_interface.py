@@ -401,6 +401,7 @@ try:
     from commands.backannotate_footprints import backannotate_footprints
     from commands.board import BoardCommands
     from commands.board.origin import BoardOriginCommands
+    from commands.board.outline import TEXT_STYLES
     from commands.component import ComponentCommands
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
@@ -5927,9 +5928,22 @@ print("ok")
             layer = params.get("layer", "F.SilkS")
             size = params.get("size", 1.0)
             rotation = params.get("rotation", 0)
+            style = params.get("style") or "normal"
+            if style not in TEXT_STYLES:
+                return {
+                    "success": False,
+                    "message": f"style must be one of {', '.join(TEXT_STYLES)}, got {style!r}",
+                }
 
             success = self.ipc_board_api.add_text(
-                text=text, x=x, y=y, layer=layer, size=size, rotation=rotation
+                text=text,
+                x=x,
+                y=y,
+                layer=layer,
+                size=size,
+                rotation=rotation,
+                bold=style == "bold",
+                italic=style == "italic",
             )
 
             return {
