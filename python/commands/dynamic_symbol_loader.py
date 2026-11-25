@@ -290,13 +290,11 @@ class DynamicSymbolLoader:
                 "/usr/share/kicad/symbols",
                 "C:/Program Files/KiCad/10.0/share/kicad/symbols",
                 *macos_symbol_dirs,
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
             ],
             "KICAD9_SYMBOL_DIR": [
                 "C:/Program Files/KiCad/9.0/share/kicad/symbols",
                 "/usr/share/kicad/symbols",
                 *macos_symbol_dirs,
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
             ],
             "KICAD8_SYMBOL_DIR": [
                 "C:/Program Files/KiCad/8.0/share/kicad/symbols",

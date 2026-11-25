@@ -236,9 +236,11 @@ class TestMacosBundleCli:
     def test_darwin_bundle_location_resolves_cli(self, tmp_path, monkeypatch):
         import utils.kicad_roots as kr
 
+        # Patch the platform first: _make_fake_cli names the file for the
+        # current OS, and the Darwin branch looks for "kicad-cli", not ".exe".
+        monkeypatch.setattr(kc.platform, "system", lambda: "Darwin")
         bundle = tmp_path / "KiCad.app"
         cli = _make_fake_cli(bundle / "Contents" / "MacOS")
-        monkeypatch.setattr(kc.platform, "system", lambda: "Darwin")
         monkeypatch.setattr(sys, "executable", str(tmp_path / "python3"))
         monkeypatch.setattr(kc.shutil, "which", lambda name: None)
         monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
@@ -249,11 +251,11 @@ class TestMacosBundleCli:
         bundle first, then the DMG layout, then /Applications/KiCad.app."""
         import utils.kicad_roots as kr
 
+        monkeypatch.setattr(kc.platform, "system", lambda: "Darwin")
         dmg = tmp_path / "KiCad" / "KiCad.app"
         flat = tmp_path / "KiCad.app"
         dmg_cli = _make_fake_cli(dmg / "Contents" / "MacOS")
         _make_fake_cli(flat / "Contents" / "MacOS")
-        monkeypatch.setattr(kc.platform, "system", lambda: "Darwin")
         monkeypatch.setattr(sys, "executable", str(tmp_path / "python3"))
         monkeypatch.setattr(kc.shutil, "which", lambda name: None)
         monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [dmg, flat])

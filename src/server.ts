@@ -159,12 +159,16 @@ function findPythonExecutable(scriptPath: string): string {
     const kicadPythonVersions = ["3.9", "3.10", "3.11", "3.12", "3.13"];
 
     // Standard KiCAD installation paths
+    // Same list, same order as _macos_bundle_candidates() in
+    // python/utils/kicad_roots.py, so the interpreter picked here and the
+    // libraries/kicad-cli picked there come from the same install.
     const kicadAppPaths = [
       "/Applications/KiCad/KiCad.app",
       "/Applications/KiCad.app", // App dragged straight into /Applications (#543)
-      "/Applications/KiCAD/KiCad.app", // Alternative capitalization
       `${process.env.HOME}/Applications/KiCad/KiCad.app`, // User Applications folder
       `${process.env.HOME}/Applications/KiCad.app`,
+      "/Applications/KiCAD/KiCad.app", // Alternative capitalization
+      `${process.env.HOME}/Applications/KiCad/KiCAD.app`,
     ];
 
     // Check all KiCAD app locations with all Python versions

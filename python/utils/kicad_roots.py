@@ -38,6 +38,7 @@ import logging
 import os
 import platform
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Iterable, Iterator, List, Optional, Tuple
@@ -194,6 +195,31 @@ def kicad_install_roots() -> List[Path]:
     return []
 
 
+def _running_kicad_bundle() -> Optional[Path]:
+    """The KiCad.app holding the running interpreter, or None.
+
+    ``sys.executable`` is checked as given and resolved, then
+    ``sys.base_prefix``: a venv built on KiCad's Python has ``sys.executable``
+    at the venv's ``bin/python`` (a symlink into the bundle), and its
+    ``sys.base_prefix`` is the bundle's Python framework.
+    """
+    starts: List[Path] = []
+    if sys.executable:
+        exe = Path(sys.executable)
+        starts.append(exe)
+        try:
+            starts.append(exe.resolve())
+        except OSError:
+            pass
+    if getattr(sys, "base_prefix", ""):
+        starts.append(Path(sys.base_prefix))
+    for start in starts:
+        for parent in (start, *start.parents):
+            if parent.suffix == ".app" and "kicad" in parent.name.lower():
+                return parent
+    return None
+
+
 def _macos_bundle_candidates() -> List[Path]:
     """Candidate macOS KiCad.app locations in priority order (may not exist).
 
@@ -205,11 +231,9 @@ def _macos_bundle_candidates() -> List[Path]:
     ``platform_helper`` and ``server.ts`` already handled).
     """
     candidates: List[Path] = []
-    exe = Path(sys.executable or "")
-    for parent in exe.parents:
-        if parent.suffix == ".app" and "kicad" in parent.name.lower():
-            candidates.append(parent)
-            break
+    running = _running_kicad_bundle()
+    if running is not None:
+        candidates.append(running)
     candidates.extend(
         [
             Path("/Applications/KiCad/KiCad.app"),
@@ -226,9 +250,10 @@ def _macos_bundle_candidates() -> List[Path]:
 def macos_kicad_apps() -> List[Path]:
     """Installed macOS KiCad.app bundles, the interpreter's bundle first.
 
-    Only bundles that exist are returned, de-duplicated (the ``KiCad`` /
-    ``KiCAD`` spellings can name the same directory on a case-insensitive
-    filesystem). The result is cached for the process (see ``_cached_roots``);
+    Only bundles that exist are returned, de-duplicated by ``(st_dev,
+    st_ino)``: on the default case-insensitive APFS the ``KiCad`` / ``KiCAD``
+    spellings name the same directory, and neither ``normcase`` nor
+    ``resolve()`` folds case there. The result is cached for the process (see ``_cached_roots``);
     a fresh copy is returned each call so callers can freely mutate it. Use
     ``reset_cache()`` in tests that change the underlying filesystem view.
     Non-macOS platforms return ``[]``.
@@ -240,9 +265,13 @@ def macos_kicad_apps() -> List[Path]:
         seen: set = set()
         apps: List[Path] = []
         for candidate in _macos_bundle_candidates():
-            if not candidate.is_dir():
+            try:
+                st = candidate.stat()
+            except OSError:
                 continue
-            key = os.path.normcase(os.path.normpath(str(candidate.resolve())))
+            if not stat.S_ISDIR(st.st_mode):
+                continue
+            key = (st.st_dev, st.st_ino)
             if key in seen:
                 continue
             seen.add(key)
