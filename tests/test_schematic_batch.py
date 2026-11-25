@@ -323,7 +323,7 @@ class TestBatchAddAndConnect:
             add_args.update(params)
             return {
                 "added_count": 1,
-                "added": [{"reference": "R1"}],
+                "added": [{"index": 0, "reference": "R1"}],
                 "errors": [],
                 "placement_bbox": None,
             }

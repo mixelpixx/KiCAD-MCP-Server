@@ -358,7 +358,7 @@ _VALUE_FIELD = re.compile(rf'\(property\s+"Value"\s+{QUOTED_VALUE}')
 _UUID = re.compile(r'\(uuid\s+"?([^\s()"]+)"?\s*\)')
 
 
-def _power_lib_ids(text: str) -> Set[str]:
+def power_lib_ids(text: str) -> Set[str]:
     """lib_ids whose definition in ``lib_symbols`` is a power symbol."""
     ids: Set[str] = set()
     for offset in iter_child_offsets(text):
@@ -370,10 +370,21 @@ def _power_lib_ids(text: str) -> Set[str]:
             if not m:
                 continue
             definition = block[sym : match_paren(block, sym) + 1]
-            if any(_POWER_HEAD.match(definition, c) for c in iter_child_offsets(definition)):
+            if definition_is_power(definition):
                 ids.add(unescape_sexpr_string(m.group(1)))
         break
     return ids
+
+
+def definition_is_power(block: str) -> bool:
+    """True when a symbol definition block carries the top-level ``(power)`` flag.
+
+    The same check ``power_lib_ids`` applies to each definition in a
+    schematic's ``lib_symbols``; this form takes one definition block, as a
+    library extraction returns it, so a project-library symbol can be
+    recognised as a power symbol before it is ever placed.
+    """
+    return any(_POWER_HEAD.match(block, c) for c in iter_child_offsets(block))
 
 
 class _Part(NamedTuple):
@@ -447,7 +458,7 @@ def annotate_sheet(sheet: Path) -> List[Dict[str, Any]]:
     project = project_name(sheet)
     text, newline = read_text_preserve_newline(sheet)
     allocator = ReferenceAllocator(project_references(root, sheet))
-    power = _power_lib_ids(text)
+    power = power_lib_ids(text)
     parts = [_read_part(text, start, end, project) for start, end in _placed_symbols(text)]
 
     def reference_at(part: _Part, path: str) -> Optional[str]:
