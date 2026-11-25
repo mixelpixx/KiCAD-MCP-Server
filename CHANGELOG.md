@@ -291,10 +291,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   stored angle `0` (and crashed on a missing `text_height` reference).
   `set_schematic_property_position` and `batch_set_schematic_property_positions`
   now interpret `angle` as a sheet-absolute drawn angle (`0` = horizontal,
-  `90` = vertical) and convert it into the symbol's local frame, preserve the
-  existing stored angle when `angle` is omitted (removing the Zod `.default(0)`
-  override too), and return `stored_angle`, `drawn_angle`, `effective_justify`,
-  `stored_justify`, `symbol_rotation`, and `symbol_mirror`.
+  `90` = vertical), reject values that are not multiples of 90° (fields are
+  only drawn horizontal or vertical), convert valid angles into the symbol's
+  local frame, preserve the existing stored angle when `angle` is omitted
+  (removing the Zod `.default(0)` override too), and return the full JSON
+  object with `stored_angle`, `drawn_angle`, `effective_justify`,
+  `stored_justify`, `symbol_rotation`, and `symbol_mirror` instead of a
+  single-line message.
   `autoplace_schematic_fields` now converts its horizontal target (`0°`) per
   symbol rotation so 90°/270° parts store `90` and render horizontally.
 

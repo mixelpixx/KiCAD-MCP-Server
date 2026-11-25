@@ -24,9 +24,12 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
       y: z.number().describe("New Y position in mm (absolute schematic coordinate)"),
       angle: z
         .number()
+        .refine((val) => Math.abs(val % 90) < 1e-6 || Math.abs(Math.abs(val % 90) - 90) < 1e-6, {
+          message: "Field angle must be a multiple of 90 degrees (e.g. 0, 90, 180, 270)",
+        })
         .optional()
         .describe(
-          "Desired text angle as drawn on the sheet in degrees (0 = horizontal, 90 = vertical). " +
+          "Desired text angle as drawn on the sheet in degrees (0 = horizontal, 90 = vertical; must be a multiple of 90). " +
             "Converted to the symbol's local frame automatically. Omit to keep the existing field angle.",
         ),
       visible: z
@@ -66,9 +69,13 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
             y: z.number(),
             angle: z
               .number()
+              .refine(
+                (val) => Math.abs(val % 90) < 1e-6 || Math.abs(Math.abs(val % 90) - 90) < 1e-6,
+                { message: "Field angle must be a multiple of 90 degrees (e.g. 0, 90, 180, 270)" },
+              )
               .optional()
               .describe(
-                "Desired sheet-absolute text angle in degrees (0 = horizontal, 90 = vertical); omit to preserve existing angle",
+                "Desired sheet-absolute text angle in degrees (0 = horizontal, 90 = vertical; must be a multiple of 90); omit to preserve existing angle",
               ),
             visible: z.boolean().optional().default(true),
           }),
