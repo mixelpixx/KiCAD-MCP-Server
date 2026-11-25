@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placedReferences } from "../src/tools/schematic-batch.js";
+import { placedReferences, registerSchematicBatchTools } from "../src/tools/schematic-batch.js";
 
 describe("batch placement reply", () => {
   it("names each placed reference once, in order", () => {
@@ -19,4 +19,21 @@ describe("batch placement reply", () => {
   it("skips entries without a reference", () => {
     expect(placedReferences([{}, { reference: "R1" }])).toBe("R1");
   });
+});
+
+describe("batch labelling descriptions", () => {
+  // Labels go on after Reference/Value fields are placed, so the fields can
+  // end up under the labels. The description is what an agent reads.
+  const descriptions = new Map<string, string>();
+  const server = {
+    tool: (name: string, description: string) => descriptions.set(name, description),
+  };
+  registerSchematicBatchTools(server as never, () => undefined);
+
+  it.each(["batch_add_and_connect", "batch_connect"])(
+    "%s points to autoplace_schematic_fields",
+    (name) => {
+      expect(descriptions.get(name)).toContain("autoplace_schematic_fields");
+    },
+  );
 });
