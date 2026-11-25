@@ -5,6 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { replaceComponentToEditComponent } from "./tool-aliases.js";
 
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
@@ -353,7 +354,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "group_components",
-    "Group multiple PCB components together by name for easier selection and manipulation.",
+    "Put PCB components in a new KiCad group with the given name, for easier selection and moving. Nothing is created if a reference is not found or a component is already in a group.",
     {
       references: z.array(z.string()).describe("Reference designators of components to group"),
       groupName: z.string().describe("Name for the component group"),
@@ -381,21 +382,33 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "replace_component",
-    "Replace an existing PCB component with a different component type, optionally changing footprint and value.",
+    "Alias of edit_component: swap a placed PCB component's footprint and optionally its value. The new footprint is newFootprint, or newComponentId when it is in Library:Footprint form.",
     {
       reference: z.string().describe("Reference designator of the component to replace"),
-      newComponentId: z.string().describe("ID of the new component to use"),
-      newFootprint: z.string().optional().describe("Optional new footprint"),
+      newComponentId: z
+        .string()
+        .describe(
+          "New footprint in Library:Footprint form (e.g. 'Resistor_SMD:R_0603_1608Metric'); not used when newFootprint is given",
+        ),
+      newFootprint: z
+        .string()
+        .optional()
+        .describe("New footprint (Library:Footprint, or a name in the current library)"),
       newValue: z.string().optional().describe("Optional new component value"),
     },
     async ({ reference, newComponentId, newFootprint, newValue }) => {
-      logger.debug(`Replacing component: ${reference} with ${newComponentId}`);
-      const result = await callKicadScript("replace_component", {
+      logger.debug(`Replacing component: ${reference} with ${newFootprint ?? newComponentId}`);
+      // No Python replace_component command exists; edit_component does the job.
+      const mapped = replaceComponentToEditComponent({
         reference,
         newComponentId,
         newFootprint,
         newValue,
       });
+      const result =
+        "error" in mapped
+          ? { success: false, message: mapped.error }
+          : await callKicadScript("edit_component", mapped.params);
 
       return {
         content: [

@@ -114,6 +114,23 @@ def _payload_in_unit(payload: Any, unit: str) -> Any:
     return {key: _payload_in_unit(value, unit) for key, value in payload.items()}
 
 
+def _group_label(group: Any) -> str:
+    """Name a PCB group for a message: its name, or its uuid when it has none.
+
+    On KiCad 10 ``GetParentGroup()`` returns an ``EDA_GROUP``, whose uuid is on
+    the item ``AsEdaItem()`` returns; on 8 and 9 it is the ``PCB_GROUP`` itself.
+    """
+    name = group.GetName()
+    if name:
+        return f"'{name}'"
+    for item in (group, getattr(group, "AsEdaItem", lambda: None)()):
+        try:
+            return f"an unnamed group {item.m_Uuid.AsString()}"
+        except Exception:
+            continue
+    return "an unnamed group"
+
+
 class ComponentCommands(PlacementOptimizerCommands):
     """Handles component-related KiCAD operations"""
 
@@ -559,6 +576,83 @@ class ComponentCommands(PlacementOptimizerCommands):
             return {
                 "success": False,
                 "message": "Failed to delete component",
+                "errorDetails": str(e),
+            }
+
+    def group_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Put footprints in a new PCB group named ``groupName``.
+
+        Nothing is created unless every reference is found and none of the
+        footprints is already in a group, so a call never leaves a partial
+        group behind.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            references = params.get("references")
+            if (
+                not isinstance(references, list)
+                or not references
+                or not all(isinstance(ref, str) and ref for ref in references)
+            ):
+                return {
+                    "success": False,
+                    "message": "references must be a non-empty list of reference designators",
+                }
+            group_name = params.get("groupName")
+            if not isinstance(group_name, str) or not group_name.strip():
+                return {"success": False, "message": "groupName is required"}
+
+            unique = list(dict.fromkeys(references))
+            footprints = {ref: self.board.FindFootprintByReference(ref) for ref in unique}
+            missing = [ref for ref, fp in footprints.items() if not fp]
+            if missing:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Component(s) not found: {', '.join(missing)}; no group was created"
+                    ),
+                    "missing": missing,
+                }
+
+            grouped = []
+            for ref, fp in footprints.items():
+                parent = fp.GetParentGroup()
+                if parent:
+                    grouped.append(f"{ref} (in {_group_label(parent)})")
+            if grouped:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Already in a group: {', '.join(grouped)}; a footprint can be in "
+                        "only one group, so no group was created"
+                    ),
+                }
+
+            group = pcbnew.PCB_GROUP(self.board)
+            group.SetName(group_name)
+            self.board.Add(group)
+            for fp in footprints.values():
+                group.AddItem(fp)
+
+            return {
+                "success": True,
+                "message": f"Grouped {len(unique)} components as '{group_name}'",
+                "groupName": group_name,
+                "references": unique,
+                "uuid": group.m_Uuid.AsString(),
+            }
+
+        except Exception as e:
+            logger.error(f"Error grouping components: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to group components",
                 "errorDetails": str(e),
             }
 
