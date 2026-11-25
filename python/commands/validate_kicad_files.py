@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from utils.kicad_cli import resolve_kicad_cli
 from utils.sheet_tree import instance_paths, project_name
+from utils.subprocess_flags import windows_no_console_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -550,6 +551,7 @@ def _cli_check(subcommand: str, work_dir: Path, target: Path) -> Dict[str, Any]:
             text=True,
             timeout=_CLI_TIMEOUT_SEC,
             stdin=subprocess.DEVNULL,
+            creationflags=windows_no_console_flags(),
         )
     except subprocess.TimeoutExpired:
         return {"ran": False, "reason": f"kicad-cli timed out after {_CLI_TIMEOUT_SEC}s"}

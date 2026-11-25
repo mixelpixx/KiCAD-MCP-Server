@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
 from utils.project_settings_guard import preserve_project_settings
+from utils.subprocess_flags import windows_no_console_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -682,6 +683,7 @@ def _docker_available() -> bool:
             capture_output=True,
             timeout=10,
             stdin=subprocess.DEVNULL,
+            creationflags=windows_no_console_flags(),
         )
         return proc.returncode == 0
     except Exception:
@@ -697,6 +699,7 @@ def _java_version_ok(java_exe: str, required: int = DEFAULT_REQUIRED_JAVA) -> bo
             text=True,
             timeout=10,
             stdin=subprocess.DEVNULL,
+            creationflags=windows_no_console_flags(),
         )
         output = proc.stderr or proc.stdout
         # Parse version like: openjdk version "17.0.18"
@@ -1724,6 +1727,7 @@ class FreeroutingCommands:
                     timeout=timeout,
                     cwd=os.path.dirname(dsn_path),
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 attempt_elapsed = round(time.time() - attempt_start, 1)
                 if kicad_rule_files and kicad_rules is None:
@@ -2204,6 +2208,7 @@ class FreeroutingCommands:
                     text=True,
                     timeout=10,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 java_version = (proc.stderr or proc.stdout).strip().split("\n")[0]
                 java_ok = _java_version_ok(java_exe, required)

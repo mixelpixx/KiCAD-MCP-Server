@@ -172,6 +172,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Windows: no console window flashes when the server runs a console program**
+  (#577). The server is started by an MCP client with piped stdio, so neither
+  the Node process nor the Python worker owns a console, and Windows opened a
+  new, visible console window for every child process — most visibly
+  `kicad-cli` during `run_drc`, `run_erc` and the export tools. Python
+  subprocess calls now pass `CREATE_NO_WINDOW` through the new
+  `utils.subprocess_flags.windows_no_console_flags` helper (a no-op off
+  Windows, guarded by a source-scan test), and the Node `spawn`/`exec`/
+  `execSync` calls pass `windowsHide: true`.
+
 - **The test suite no longer runs against a KiCad you have open.** With KiCad
   running, the interface's runtime IPC switch connected to it and tests ran
   against the live session; two failed on macOS. `tests/conftest.py` now

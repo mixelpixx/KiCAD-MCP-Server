@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.subprocess_flags import windows_no_console_flags
+
 IU_PER_MM = 1_000_000
 
 
@@ -132,6 +134,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
         text=True,
         timeout=60,
         stdin=subprocess.DEVNULL,
+        creationflags=windows_no_console_flags(),
     )
 
 
@@ -182,6 +185,7 @@ def reference_file(board_path: str, reference: str, tmpdir: str) -> Tuple[Option
         capture_output=True,
         timeout=60,
         stdin=subprocess.DEVNULL,
+        creationflags=windows_no_console_flags(),
     )
     if shown.returncode != 0:
         return None, (

@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 
 from commands.variant_registry import registered_names
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.subprocess_flags import windows_no_console_flags
 
 
 def export_variant_bom(params):
@@ -54,6 +55,7 @@ def export_variant_bom(params):
                 encoding="utf-8",
                 errors="replace",
                 timeout=120,
+                creationflags=windows_no_console_flags(),
             )
             if result.returncode:
                 detail = (result.stderr or result.stdout).strip()

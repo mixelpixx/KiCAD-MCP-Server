@@ -22,6 +22,7 @@ from utils.kicad_dru import (
     resolve_dru_path,
     rule_name_for_layer,
 )
+from utils.subprocess_flags import windows_no_console_flags
 
 logger = logging.getLogger("kicad_interface")
 
@@ -776,6 +777,7 @@ class DesignRuleCommands:
                     text=True,
                     timeout=timeout_sec,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
 
                 if result.returncode != 0:
@@ -861,6 +863,7 @@ class DesignRuleCommands:
                         capture_output=True,
                         timeout=timeout_sec,
                         stdin=subprocess.DEVNULL,
+                        creationflags=windows_no_console_flags(),
                     )
 
                 # Return summary only (not full violations list)
@@ -922,6 +925,7 @@ class DesignRuleCommands:
                     text=True,
                     timeout=30,
                     stdin=subprocess.DEVNULL,
+                    creationflags=windows_no_console_flags(),
                 )
                 cls._refill_support[kicad_cli] = "--refill-zones" in (h.stdout or "") + (
                     h.stderr or ""
