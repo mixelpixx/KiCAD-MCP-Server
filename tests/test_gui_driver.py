@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
+import stat
 import sys
 import types
 from pathlib import Path
@@ -705,9 +707,70 @@ class TestRemoveHelperInstalled:
         target = plugins / HELPER_IDENTIFIER
         assert out["removed"] == [str(target)]
         assert out["not_present"] == []
+        assert out["skipped"] == []
         assert out["failed"] == []
         assert not target.exists()
         assert (neighbour / "plugin.py").is_file()  # other plugins untouched
+
+    def test_plugin_manager_copy_without_marker_is_skipped(self, tmp_path):
+        """KiCad's plugin manager installs the same package into the same dir,
+        without the HELPER_VERSION marker; that copy is not ours to delete."""
+        plugins = self._plugins_dir(tmp_path)
+        target = plugins / HELPER_IDENTIFIER
+        target.mkdir()
+        (target / "__init__.py").write_text("# installed by the plugin manager\n")
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == []
+        assert [s["path"] for s in out["skipped"]] == [str(target)]
+        assert "marker" in out["skipped"][0]["reason"]
+        assert (target / "__init__.py").is_file()
+
+    def test_read_only_files_are_removed(self, tmp_path):
+        """copy2 keeps file modes, so a read-only checkout deploys read-only
+        files; on Windows rmtree alone would stop at the first one."""
+        plugins = self._plugins_dir(tmp_path)
+        ensure_helper_installed(plugin_dirs=[plugins])
+        target = plugins / HELPER_IDENTIFIER
+        for f in target.rglob("*"):
+            if f.is_file():
+                f.chmod(stat.S_IREAD)
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == [str(target)]
+        assert out["failed"] == []
+        assert not target.exists()
+
+    def test_onerror_clears_read_only_bit_and_retries(self, tmp_path):
+        f = tmp_path / "ro.py"
+        f.write_text("x\n")
+        f.chmod(stat.S_IREAD)
+        exc = PermissionError("read-only")
+        gui_driver._rmtree_onerror(os.unlink, str(f), (PermissionError, exc, None))
+        assert not f.exists()
+
+    def test_onerror_reraises_anything_else(self):
+        exc = OSError("Cannot call rmtree on a symbolic link")
+        with pytest.raises(OSError, match="symbolic link"):
+            gui_driver._rmtree_onerror(os.path.islink, "x", (OSError, exc, None))
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="directory junctions are Windows-only")
+    def test_junction_is_not_followed(self, tmp_path):
+        """Path.is_symlink() is False for a junction; rmtree must still refuse
+        it, so the junction's target survives."""
+        import _winapi
+
+        plugins = self._plugins_dir(tmp_path)
+        real = tmp_path / "elsewhere"
+        real.mkdir()
+        (real / HELPER_VERSION_MARKER).write_text("0.0.0\n")
+        (real / "keep.txt").write_text("keep\n")
+        target = plugins / HELPER_IDENTIFIER
+        _winapi.CreateJunction(str(real), str(target))
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == [str(target)]
+        assert (real / "keep.txt").is_file()
+        assert (real / HELPER_VERSION_MARKER).is_file()
 
     def test_nothing_installed_is_a_noop(self, tmp_path):
         plugins = self._plugins_dir(tmp_path)

@@ -31,6 +31,7 @@ import logging
 import os
 import shutil
 import socket
+import stat
 import sys
 import time
 from pathlib import Path
@@ -173,30 +174,52 @@ def ensure_helper_installed(
     return {"installed": installed, "current": current}
 
 
+def _rmtree_onerror(func, path, exc_info) -> None:
+    """``shutil.rmtree`` error hook: clear a read-only bit and retry once.
+
+    On Windows ``rmtree`` stops at the first read-only file, leaving a
+    half-removed plugin KiCad would still try to load. ``copy2`` keeps file
+    modes, so a read-only source checkout deploys read-only files. Anything
+    else (including rmtree refusing a link or junction) is re-raised.
+    """
+    exc = exc_info[1]
+    if func in (os.unlink, os.remove, os.rmdir) and isinstance(exc, PermissionError):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+        return
+    raise exc
+
+
 def remove_helper_installed(
     plugin_dirs: Optional[List[Path]] = None,
 ) -> Dict[str, Any]:
     """Remove the deployed helper from every KiCad version's plugin tree.
 
-    Deletes ONLY ``<plugins-dir>/<HELPER_IDENTIFIER>/`` — the exact dir
-    :func:`ensure_helper_installed` writes. Anything else in the plugin tree
-    is left alone, and a file (or link) wearing the identifier name is
-    reported, not deleted: it is not ours to remove.
+    Deletes ONLY the exact dir :func:`ensure_helper_installed` writes:
+    ``<plugins-dir>/<HELPER_IDENTIFIER>/`` carrying the ``HELPER_VERSION``
+    marker file. KiCad's plugin manager installs the same package into the
+    same dir without that marker; such a dir is reported under ``skipped``
+    and left alone, so a plugin-manager install is never deleted underneath
+    it. A file (or link) wearing the identifier name is reported in
+    ``failed``, not deleted: it is not ours to remove.
 
-    Returns ``{"removed": [...], "not_present": [...], "failed": [...]}``.
-    A dir that cannot be removed is reported in ``failed`` and never raises —
-    removal must not break the graceful path the way install doesn't.
+    Returns ``{"removed": [...], "not_present": [...], "skipped":
+    [{"path": ..., "reason": ...}], "failed": [...]}``. A dir that cannot be
+    removed is reported in ``failed`` and never raises — removal must not
+    break the graceful path the way install doesn't.
     """
     if plugin_dirs is None:
         plugin_dirs = kicad_plugin_dirs()
     removed: List[str] = []
     not_present: List[str] = []
+    skipped: List[Dict[str, str]] = []
     failed: List[str] = []
     if not HELPER_IDENTIFIER:
         # An empty identifier would resolve to the plugins dir itself.
         return {
             "removed": removed,
             "not_present": not_present,
+            "skipped": skipped,
             "failed": [str(p) for p in plugin_dirs],
         }
     for plugins_dir in plugin_dirs:
@@ -208,14 +231,26 @@ def remove_helper_installed(
             logger.warning("gui-driver helper removal skipped %s: not a directory", target)
             failed.append(str(target))
             continue
+        if not (target / HELPER_VERSION_MARKER).is_file():
+            skipped.append(
+                {
+                    "path": str(target),
+                    "reason": (
+                        f"no {HELPER_VERSION_MARKER} marker: not deployed by "
+                        "install_gui_driver (likely installed through KiCad's plugin "
+                        "manager; remove it there)"
+                    ),
+                }
+            )
+            continue
         try:
-            shutil.rmtree(target)
+            shutil.rmtree(target, onerror=_rmtree_onerror)
         except OSError as exc:
             logger.warning("gui-driver helper removal from %s failed: %s", target, exc)
             failed.append(str(target))
             continue
         removed.append(str(target))
-    return {"removed": removed, "not_present": not_present, "failed": failed}
+    return {"removed": removed, "not_present": not_present, "skipped": skipped, "failed": failed}
 
 
 # Seed list of destructive menu labels (docs/gui_destructive_seed.txt,
@@ -450,7 +485,9 @@ class GuiDriverCommands:
 
         The mirror of install_gui_driver: deletes
         ``<kicad-data>/<ver>/3rdparty/plugins/<HELPER_IDENTIFIER>/`` for every
-        KiCad version found, and leaves other plugins alone. A helper already
+        KiCad version found where install_gui_driver deployed it, and leaves
+        other plugins alone; a copy installed through KiCad's plugin manager
+        is reported under ``skipped``. A helper already
         loaded in a running KiCad keeps running until KiCad restarts (or
         Tools > External Plugins > Refresh Plugins) — removal takes effect on
         the next start. The per-session token file is left in place: it is
@@ -468,12 +505,14 @@ class GuiDriverCommands:
                 ),
                 "removed": removed["removed"],
                 "not_present": removed["not_present"],
+                "skipped": removed["skipped"],
                 "failed": removed["failed"],
             }
         return {
             "success": True,
             "removed": removed["removed"],
             "not_present": removed["not_present"],
+            "skipped": removed["skipped"],
             "failed": removed["failed"],
             "next": (
                 "Restart KiCad (or Tools > External Plugins > Refresh Plugins): a helper "

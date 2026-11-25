@@ -284,7 +284,9 @@ action-plugin buttons (#333, @rossvonfange). Nothing is installed until you run
 Run `uninstall_gui_driver` to remove the deployed helper (restart KiCad for a
 loaded helper to go away), or delete
 `<kicad-data>/<ver>/3rdparty/plugins/com_github_rossvonfange_kicad-gui-driver/`
-by hand.
+by hand. For a complete clean-up, also delete the session token file
+`gui_driver_<port>.token` (in `~/.local/share/kicad/` on Linux,
+`%APPDATA%\kicad\` on Windows, `~/Library/Preferences/kicad/` on macOS).
 
 ### KiCad 10, IPC and Freerouting
 

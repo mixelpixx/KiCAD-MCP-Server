@@ -166,7 +166,7 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
 
   server.tool(
     "uninstall_gui_driver",
-    "Remove the in-KiCad GUI-driver helper plugin from the user's KiCad plugin tree (the mirror of install_gui_driver). Deletes the deployed <identifier> directory for every KiCad version found; other plugins are left alone. A helper already loaded in a running KiCad keeps running until KiCad restarts (or Refresh Plugins). The per-session token file is left in place.",
+    "Remove the in-KiCad GUI-driver helper plugin from the user's KiCad plugin tree (the mirror of install_gui_driver). Deletes the 3rdparty/plugins/com_github_rossvonfange_kicad-gui-driver directory install_gui_driver deployed for every KiCad version found; other plugins, and a copy installed through KiCad's plugin manager, are left alone. A helper already loaded in a running KiCad keeps running until KiCad restarts (or Refresh Plugins). The per-session token file is left in place.",
     {},
     async () => asText(await callKicadScript("uninstall_gui_driver", {})),
   );

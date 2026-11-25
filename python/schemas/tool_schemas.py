@@ -4321,8 +4321,10 @@ GUI_DRIVER_TOOLS = [
         "description": (
             "Remove the deployed in-KiCad GUI-driver helper plugin from the user's "
             "KiCad plugin tree (the mirror of install_gui_driver). Deletes the "
-            "<identifier> directory for every KiCad version found; other plugins "
-            "are left alone. A helper already loaded in a running KiCad keeps "
+            "3rdparty/plugins/com_github_rossvonfange_kicad-gui-driver directory "
+            "install_gui_driver deployed for every KiCad version found; other "
+            "plugins, and a copy installed through KiCad's plugin manager, are left "
+            "alone. A helper already loaded in a running KiCad keeps "
             "running until KiCad restarts (or Tools > External Plugins > Refresh "
             "Plugins). The per-session token file is left in place."
         ),
