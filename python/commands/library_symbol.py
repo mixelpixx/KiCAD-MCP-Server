@@ -255,7 +255,7 @@ class SymbolLibraryManager:
         Resolve environment variables and paths in library URI
 
         Handles:
-        - ${KICAD9_SYMBOL_DIR} -> /Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols
+        - ${KICAD9_SYMBOL_DIR} -> <installed KiCad.app>/Contents/SharedSupport/symbols
         - ${KICAD10_3RD_PARTY} -> ~/Documents/KiCad/10.0/3rdparty
         - ${KICAD10_TEMPLATE_DIR} -> KiCad's template directory (stock tables)
         - ${KIPRJMOD} -> project directory
@@ -280,6 +280,16 @@ class SymbolLibraryManager:
         # Convert to absolute path
         path = Path(resolved)
 
+        # A stock row can point into the bundle KiCad was installed in; once
+        # the app moves, re-root the same Contents/... suffix onto an
+        # installed bundle (#543).
+        if not path.exists():
+            from utils.kicad_roots import reroot_kicad_app_path
+
+            for candidate in reroot_kicad_app_path(path):
+                if candidate.exists():
+                    return str(candidate)
+
         # Check if path exists
         if path.exists():
             return str(path)
@@ -292,7 +302,14 @@ class SymbolLibraryManager:
         possible_paths = [
             "/usr/share/kicad/symbols",
             "/usr/local/share/kicad/symbols",
-            "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
+        ]
+
+        # Symbols under every installed macOS bundle (DMG layout,
+        # /Applications/KiCad.app, ~/Applications variants — #543).
+        from utils.kicad_roots import macos_kicad_apps
+
+        possible_paths += [
+            str(app / "Contents" / "SharedSupport" / "symbols") for app in macos_kicad_apps()
         ]
 
         # Prepend Windows install roots from the shared discovery helper (registry

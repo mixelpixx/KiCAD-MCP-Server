@@ -122,13 +122,23 @@ class DynamicSymbolLoader:
         except Exception:  # pragma: no cover - defensive; helper is stdlib-only
             root_symbol_dirs = []
 
+        # Symbols under every installed macOS bundle (#543).
+        try:
+            from utils.kicad_roots import macos_kicad_apps
+
+            macos_symbol_dirs = [
+                app / "Contents" / "SharedSupport" / "symbols" for app in macos_kicad_apps()
+            ]
+        except Exception:  # pragma: no cover - defensive; helper is stdlib-only
+            macos_symbol_dirs = []
+
         possible_paths = root_symbol_dirs + [
             Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("/usr/share/kicad/symbols"),
             Path("/usr/local/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
-            Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
+            *macos_symbol_dirs,
             Path.home() / ".local" / "share" / "kicad" / "10.0" / "symbols",
             Path.home() / ".local" / "share" / "kicad" / "9.0" / "symbols",
             Path.home() / "Documents" / "KiCad" / "10.0" / "3rdparty" / "symbols",
@@ -268,16 +278,23 @@ class DynamicSymbolLoader:
 
     def _resolve_sym_uri(self, uri: str) -> Optional[str]:
         """Resolve environment variables in a sym-lib-table URI."""
+        # Symbols under every installed macOS bundle (#543) first, so a
+        # ${KICAD*_SYMBOL_DIR} row resolves to the installed bundle.
+        from utils.kicad_roots import macos_kicad_apps
+
+        macos_symbol_dirs = [
+            str(app / "Contents" / "SharedSupport" / "symbols") for app in macos_kicad_apps()
+        ]
         env_map = {
             "KICAD10_SYMBOL_DIR": [
                 "/usr/share/kicad/symbols",
                 "C:/Program Files/KiCad/10.0/share/kicad/symbols",
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
+                *macos_symbol_dirs,
             ],
             "KICAD9_SYMBOL_DIR": [
                 "C:/Program Files/KiCad/9.0/share/kicad/symbols",
                 "/usr/share/kicad/symbols",
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
+                *macos_symbol_dirs,
             ],
             "KICAD8_SYMBOL_DIR": [
                 "C:/Program Files/KiCad/8.0/share/kicad/symbols",
@@ -294,6 +311,14 @@ class DynamicSymbolLoader:
                 # Fallback: try OS env
                 if var in os.environ:
                     return result.replace(f"${{{var}}}", os.environ[var])
+        # A bare absolute row into a moved bundle: re-root it (#543).
+        result_path = Path(result)
+        if result_path.is_absolute() and not result_path.exists():
+            from utils.kicad_roots import reroot_kicad_app_path
+
+            for rerooted in reroot_kicad_app_path(result_path):
+                if rerooted.exists():
+                    return str(rerooted)
         return result
 
     def _extract_symbol_block(self, text: str, symbol_name: str) -> Optional[str]:

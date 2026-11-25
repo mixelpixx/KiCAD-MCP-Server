@@ -788,5 +788,69 @@ def test_set_uri_tolerates_a_space_before_the_closing_paren(tmp_path):
     assert '(uri "new.kicad_sym")' in (tmp_path / "sym-lib-table").read_text(encoding="utf-8")
 
 
+# --------------------------------------------------------------------------- #
+# _resolve_uri re-roots a stock row out of a moved bundle (#543)
+# --------------------------------------------------------------------------- #
+
+
+def _stale_bundle(tmp_path):
+    """SharedSupport of a KiCad.app that no longer exists. Built under tmp_path
+    so a real DMG install on the test machine cannot make it exist."""
+    return tmp_path / "Old" / "KiCad" / "KiCad.app" / "Contents" / "SharedSupport"
+
+
+class TestResolveUriReroot:
+    def test_footprint_row_rerooted_onto_installed_bundle(self, tmp_path, monkeypatch):
+        import utils.kicad_roots as kr
+
+        bundle = tmp_path / "KiCad.app"
+        target = bundle / "Contents" / "SharedSupport" / "footprints"
+        (target / "Resistor_SMD.pretty").mkdir(parents=True)
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        manager = LibraryManager()
+        uri = str(_stale_bundle(tmp_path) / "footprints" / "Resistor_SMD.pretty")
+        assert manager._resolve_uri(uri, path_vars={}) == str(target / "Resistor_SMD.pretty")
+
+    def test_symbol_row_rerooted_onto_installed_bundle(self, tmp_path, monkeypatch):
+        import utils.kicad_roots as kr
+
+        bundle = tmp_path / "KiCad.app"
+        target = bundle / "Contents" / "SharedSupport" / "symbols"
+        target.mkdir(parents=True)
+        (target / "Device.kicad_sym").write_text("(kicad_symbol_lib)", encoding="utf-8")
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        manager = SymbolLibraryManager()
+        uri = str(_stale_bundle(tmp_path) / "symbols" / "Device.kicad_sym")
+        assert manager._resolve_uri(uri, path_vars={}) == str(target / "Device.kicad_sym")
+
+    def test_existing_path_is_not_rerooted(self, tmp_path):
+        manager = LibraryManager()
+        real = tmp_path / "lib.pretty"
+        real.mkdir()
+        assert manager._resolve_uri(str(real), path_vars={}) == str(real)
+
+    def test_symbol_loader_bare_row_rerooted_onto_installed_bundle(self, tmp_path, monkeypatch):
+        import utils.kicad_roots as kr
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        bundle = tmp_path / "KiCad.app"
+        target = bundle / "Contents" / "SharedSupport" / "symbols"
+        target.mkdir(parents=True)
+        (target / "Device.kicad_sym").write_text("(kicad_symbol_lib)", encoding="utf-8")
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        uri = str(_stale_bundle(tmp_path) / "symbols" / "Device.kicad_sym")
+        assert DynamicSymbolLoader()._resolve_sym_uri(uri) == str(target / "Device.kicad_sym")
+
+    def test_symbol_loader_bare_row_without_installed_copy_is_unchanged(
+        self, tmp_path, monkeypatch
+    ):
+        import utils.kicad_roots as kr
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [tmp_path / "KiCad.app"])
+        uri = str(_stale_bundle(tmp_path) / "symbols" / "Device.kicad_sym")
+        assert DynamicSymbolLoader()._resolve_sym_uri(uri) == uri
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

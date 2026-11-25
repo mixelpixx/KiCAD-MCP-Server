@@ -172,6 +172,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **macOS: KiCad is found when installed as `/Applications/KiCad.app`** (#543).
+  Every lookup hard-coded the DMG layout (`/Applications/KiCad/KiCad.app`),
+  so dragging the app straight into `/Applications` broke `kicad-cli`
+  discovery and hid the stock footprint and symbol libraries. A new
+  `macos_kicad_apps()` helper in `utils/kicad_roots.py` returns the installed
+  bundles — the one holding the running interpreter first, then the DMG
+  layout, `/Applications/KiCad.app` and the `~/Applications` variants — and
+  all the call sites use it. Table URIs pointing into a moved bundle are
+  re-rooted onto the installed one, so the global stock tables keep working
+  after the app moves.
+
 - **The test suite no longer runs against a KiCad you have open.** With KiCad
   running, the interface's runtime IPC switch connected to it and tests ran
   against the live session; two failed on macOS. `tests/conftest.py` now

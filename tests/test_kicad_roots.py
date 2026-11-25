@@ -258,3 +258,152 @@ class TestPublicEntry:
         # containing bin/ (empty is fine — KiCad may not be installed in CI).
         for root in kr.kicad_install_roots():
             assert root.is_dir(), root
+
+
+# --------------------------------------------------------------------------- #
+# macos_kicad_apps / reroot_kicad_app_path (#543)
+# --------------------------------------------------------------------------- #
+
+
+def _make_bundle(base: Path, *parts: str) -> Path:
+    """Create a fake KiCad.app bundle directory and return its Path."""
+    bundle = base.joinpath(*parts)
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    return bundle
+
+
+@pytest.fixture
+def as_darwin(monkeypatch):
+    """Force the module to take its macOS path."""
+    monkeypatch.setattr(kr.platform, "system", lambda: "Darwin")
+
+
+@pytest.fixture
+def plain_python(tmp_path, monkeypatch):
+    """An interpreter outside any KiCad.app (executable and base prefix)."""
+    monkeypatch.setattr(kr.sys, "executable", str(tmp_path / "bin" / "python3"))
+    monkeypatch.setattr(kr.sys, "base_prefix", str(tmp_path))
+
+
+class TestMacosBundleCandidates:
+    def test_interpreter_bundle_comes_first(self, tmp_path, monkeypatch, as_darwin, plain_python):
+        mine = _make_bundle(tmp_path, "KiCad.app")
+        monkeypatch.setattr(kr.sys, "executable", str(mine / "Contents" / "MacOS" / "python3"))
+        assert kr._macos_bundle_candidates()[0] == mine
+
+    def test_venv_symlink_into_bundle_comes_first(
+        self, tmp_path, monkeypatch, as_darwin, plain_python
+    ):
+        """A venv built on KiCad's Python: sys.executable is the venv's
+        bin/python, a symlink to the interpreter inside the bundle."""
+        mine = _make_bundle(tmp_path, "KiCad.app")
+        real = mine / "Contents" / "MacOS" / "python3"
+        real.write_text("", encoding="utf-8")
+        venv_bin = tmp_path / "venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        link = venv_bin / "python"
+        try:
+            link.symlink_to(real)
+        except OSError:
+            pytest.skip("symlinks not available")
+        monkeypatch.setattr(kr.sys, "executable", str(link))
+        assert kr._macos_bundle_candidates()[0] == mine.resolve()
+
+    def test_base_prefix_bundle_comes_first(self, tmp_path, monkeypatch, as_darwin, plain_python):
+        mine = _make_bundle(tmp_path, "KiCad.app")
+        framework = mine / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.9"
+        monkeypatch.setattr(kr.sys, "base_prefix", str(framework))
+        assert kr._macos_bundle_candidates()[0] == mine
+
+    def test_no_app_ancestor_means_dmg_layout_first(self, as_darwin, plain_python):
+        assert kr._macos_bundle_candidates()[0] == Path("/Applications/KiCad/KiCad.app")
+
+    def test_candidate_order(self, as_darwin, plain_python):
+        home = Path.home()
+        assert kr._macos_bundle_candidates() == [
+            Path("/Applications/KiCad/KiCad.app"),
+            Path("/Applications/KiCad.app"),
+            home / "Applications" / "KiCad" / "KiCad.app",
+            home / "Applications" / "KiCad.app",
+            Path("/Applications/KiCAD/KiCad.app"),
+            home / "Applications" / "KiCad" / "KiCAD.app",
+        ]
+
+
+class TestMacosKicadApps:
+    def test_non_darwin_returns_empty(self, monkeypatch):
+        monkeypatch.setattr(kr.platform, "system", lambda: "Linux")
+        assert kr.macos_kicad_apps() == []
+
+    def test_only_existing_bundles_in_order(self, tmp_path, monkeypatch, as_darwin):
+        dmg = _make_bundle(tmp_path, "KiCad", "KiCad.app")
+        flat = _make_bundle(tmp_path, "KiCad.app")
+        monkeypatch.setattr(
+            kr, "_macos_bundle_candidates", lambda: [flat, dmg, tmp_path / "gone.app", flat]
+        )
+        assert kr.macos_kicad_apps() == [flat, dmg]
+
+    def test_two_spellings_of_one_directory_deduped(self, tmp_path, monkeypatch, as_darwin):
+        """On a case-insensitive filesystem (default APFS, NTFS) KiCad/KiCAD
+        name one directory; neither normcase nor resolve() folds case on macOS."""
+        bundle = _make_bundle(tmp_path, "KiCad", "KiCad.app")
+        other_spelling = tmp_path / "KiCAD" / "KiCad.app"
+        if not other_spelling.is_dir():
+            pytest.skip("case-sensitive filesystem")
+        monkeypatch.setattr(kr, "_macos_bundle_candidates", lambda: [bundle, other_spelling])
+        assert kr.macos_kicad_apps() == [bundle]
+
+    def test_same_inode_deduped(self, tmp_path, monkeypatch, as_darwin):
+        """De-duplication keys on (st_dev, st_ino), not on the path text."""
+        bundle = _make_bundle(tmp_path, "KiCad.app")
+        other = _make_bundle(tmp_path, "KiCAD.app")
+        real_stat = Path.stat
+
+        def fake_stat(self, *args, **kwargs):
+            # Make the second spelling report the first one's identity, as a
+            # case-insensitive filesystem does.
+            return real_stat(bundle if self == other else self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", fake_stat)
+        monkeypatch.setattr(kr, "_macos_bundle_candidates", lambda: [bundle, other])
+        assert kr.macos_kicad_apps() == [bundle]
+
+    def test_reset_cache_clears_macos_apps(self, tmp_path, monkeypatch, as_darwin):
+        first = _make_bundle(tmp_path, "KiCad.app")
+        second = _make_bundle(tmp_path, "KiCad", "KiCad.app")
+        monkeypatch.setattr(kr, "_macos_bundle_candidates", lambda: [first])
+        assert kr.macos_kicad_apps() == [first]
+        monkeypatch.setattr(kr, "_macos_bundle_candidates", lambda: [second])
+        assert kr.macos_kicad_apps() == [first]  # cached
+        kr.reset_cache()
+        assert kr.macos_kicad_apps() == [second]
+
+    def test_symlinked_spelling_deduped(self, tmp_path, monkeypatch, as_darwin):
+        bundle = _make_bundle(tmp_path, "KiCad.app")
+        alias = tmp_path / "Alias.app"
+        alias.symlink_to(bundle, target_is_directory=True)
+        monkeypatch.setattr(kr, "_macos_bundle_candidates", lambda: [bundle, alias])
+        assert kr.macos_kicad_apps() == [bundle]
+
+
+class TestRerootKicadAppPath:
+    def test_reroots_missing_bundle_onto_installed(self, tmp_path, monkeypatch, as_darwin):
+        installed = _make_bundle(tmp_path, "KiCad.app")
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [installed])
+        # The stale bundle is built under tmp_path so a real DMG install on
+        # the test machine cannot make it exist.
+        old = tmp_path / "Old" / "KiCad" / "KiCad.app" / "Contents" / "SharedSupport"
+        old = old / "symbols" / "Device.kicad_sym"
+        assert kr.reroot_kicad_app_path(old) == [
+            installed / "Contents" / "SharedSupport" / "symbols" / "Device.kicad_sym"
+        ]
+
+    def test_existing_bundle_is_not_rerooted(self, tmp_path, monkeypatch, as_darwin):
+        bundle = _make_bundle(tmp_path, "KiCad", "KiCad.app")
+        monkeypatch.setattr(kr, "macos_kicad_apps", lambda: [bundle])
+        path = bundle / "Contents" / "SharedSupport" / "symbols" / "Device.kicad_sym"
+        assert kr.reroot_kicad_app_path(path) == []
+
+    def test_paths_without_an_app_segment_return_empty(self, tmp_path, monkeypatch, as_darwin):
+        assert kr.reroot_kicad_app_path(tmp_path / "foo" / "bar") == []
+        assert kr.reroot_kicad_app_path(tmp_path / "Old" / "KiCad" / "KiCad.app") == []
