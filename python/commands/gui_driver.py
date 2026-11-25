@@ -174,20 +174,49 @@ def ensure_helper_installed(
 
 
 # Seed list of destructive menu labels — single source is
-# docs/gui_destructive_seed.txt (regex-derived from the live pcbnew 215-item
-# enumeration), loaded at runtime so the list can't drift from the file.
-# Resolved relative to this module, the same idiom as _bundled_helper_dir.
-# Matching is on NORMALIZED labels — see _normalize_label — so
-# "Update PCB from Schematic…" and "Update PCB from Schematic..." both hit.
-_DESTRUCTIVE_SEED_FILE = Path(__file__).resolve().parents[2] / "docs" / "gui_destructive_seed.txt"
+# python/resources/gui_destructive_seed.txt (regex-derived from the live pcbnew
+# 215-item enumeration), kept next to the code so it ships with it and loaded
+# at runtime so the list can't drift from the file. Matching is on NORMALIZED
+# labels — see _normalize_label — so "Update PCB from Schematic…" and
+# "Update PCB from Schematic..." both hit.
+_DESTRUCTIVE_SEED_FILE = (
+    Path(__file__).resolve().parents[1] / "resources" / "gui_destructive_seed.txt"
+)
 
 
 def _load_destructive_seed_labels(path: Path = _DESTRUCTIVE_SEED_FILE) -> List[str]:
-    """Read the destructive-label seed list from its single source file."""
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    """Read the destructive-label seed list from its single source file.
+
+    ``utf-8-sig`` so a BOM written by a Windows editor does not stick to the
+    first label and silently stop it matching.
+    """
+    text = path.read_text(encoding="utf-8-sig")
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-DESTRUCTIVE_SEED_LABELS = _load_destructive_seed_labels()
+def _load_destructive_seed(
+    path: Path = _DESTRUCTIVE_SEED_FILE,
+) -> Tuple[List[str], Optional[str]]:
+    """Load the seed list at import without ever raising.
+
+    A missing or unreadable file must not take the Python worker (and every
+    tool with it) down at startup. It is still loud: the error is logged and
+    returned, and ``kicad_gui_tree`` carries it as a warning, because an empty
+    list silently drops the only warning the model gets before clicking
+    "Revert" or "Update PCB from Schematic".
+    """
+    try:
+        return _load_destructive_seed_labels(path), None
+    except (OSError, UnicodeDecodeError) as exc:
+        message = (
+            f"destructive flagging is unavailable: the seed list {path} could not be "
+            f"read ({exc}); no menu item is marked destructive"
+        )
+        logger.error("gui-driver: %s", message)
+        return [], message
+
+
+DESTRUCTIVE_SEED_LABELS, DESTRUCTIVE_SEED_ERROR = _load_destructive_seed()
 
 # Preferred matching path: resolved KiCad TOOL_ACTION names (survive label
 # renames). wx menu items expose no public action mapping today, so the helper
@@ -399,13 +428,17 @@ class GuiDriverCommands:
         """Enumerate the live GUI: menus/submenus (name+id) + AUI toolbars (id+tooltip).
 
         Destructive items carry `destructive: true` and a leading `⚠ ` — an
-        ADVISORY marker only; nothing is gated.
+        ADVISORY marker only; nothing is gated. If the seed list could not be
+        loaded, the reply carries a ``warning`` that flagging is unavailable.
         """
         out = self._call({"cmd": "tree", "frame": params.get("frame")})
         if not out["success"]:
             return out
         tree = flag_destructive_tree(out["result"])
-        return {"success": True, "tree": tree}
+        result: Dict[str, Any] = {"success": True, "tree": tree}
+        if DESTRUCTIVE_SEED_ERROR:
+            result["warning"] = DESTRUCTIVE_SEED_ERROR
+        return result
 
     def kicad_gui_click(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Activate a menu item or toolbar tool by name (or explicit id).

@@ -174,9 +174,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 - **Destructive-label seed list is now read from its file, not duplicated in
   code** (#412, item 7). `DESTRUCTIVE_SEED_LABELS` in `gui_driver.py`
-  duplicated `docs/gui_destructive_seed.txt` and the two could drift; the list
-  is now loaded from the file at runtime, so the file is the single source.
-  A test fails if the runtime list and the file ever disagree.
+  duplicated `docs/gui_destructive_seed.txt` and the two could drift; the file
+  now lives at `python/resources/gui_destructive_seed.txt`, next to the code,
+  and the list is loaded from it at runtime, so the file is the single source.
+  A test fails if the runtime list and the file ever disagree. A missing or
+  unreadable file no longer stops the Python worker at startup: the error is
+  logged and `kicad_gui_tree` replies with a warning that destructive flagging
+  is unavailable. A UTF-8 BOM in the file is ignored.
 
 - **The test suite no longer runs against a KiCad you have open.** With KiCad
   running, the interface's runtime IPC switch connected to it and tests ran

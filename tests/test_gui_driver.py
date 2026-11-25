@@ -167,7 +167,7 @@ class TestDestructiveSeedSingleSource:
         # the runtime list IS the file: if the two ever disagree, this fails
         lines = [
             line.strip()
-            for line in (REPO_ROOT / "docs" / "gui_destructive_seed.txt")
+            for line in (REPO_ROOT / "python" / "resources" / "gui_destructive_seed.txt")
             .read_text(encoding="utf-8")
             .splitlines()
             if line.strip()
@@ -183,6 +183,57 @@ class TestDestructiveSeedSingleSource:
             "Nuke Everything...",
             "Keep Me",
         ]
+
+    def test_loader_strips_a_utf8_bom(self, tmp_path):
+        seed = tmp_path / "seed.txt"
+        seed.write_bytes("\ufeffRevert\nDelete\n".encode("utf-8"))
+        assert gui_driver._load_destructive_seed_labels(seed) == ["Revert", "Delete"]
+
+    def test_seed_loaded_without_error(self):
+        assert gui_driver.DESTRUCTIVE_SEED_ERROR is None
+        assert gui_driver.DESTRUCTIVE_SEED_LABELS
+
+    def test_missing_file_is_logged_not_raised(self, tmp_path, caplog):
+        # a missing seed file must not raise at import (that would kill the
+        # Python worker and every tool with it), but it must be loud
+        caplog.set_level(logging.ERROR, logger="kicad_interface")
+        labels, error = gui_driver._load_destructive_seed(tmp_path / "missing.txt")
+        assert labels == []
+        assert error and "destructive flagging is unavailable" in error
+        assert any(
+            r.levelno == logging.ERROR and "destructive flagging is unavailable" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_undecodable_file_is_logged_not_raised(self, tmp_path):
+        seed = tmp_path / "seed.txt"
+        seed.write_bytes(b"\xff\xfe\xfa not utf-8\n")
+        labels, error = gui_driver._load_destructive_seed(seed)
+        assert labels == []
+        assert error and "destructive flagging is unavailable" in error
+
+    def test_gui_tree_warns_when_seed_unavailable(self, monkeypatch):
+        monkeypatch.setattr(
+            gui_driver, "DESTRUCTIVE_SEED_ERROR", "destructive flagging is unavailable"
+        )
+        monkeypatch.setattr(
+            GuiDriverCommands,
+            "_call",
+            lambda self, req: {"success": True, "result": _captured_tree()},
+        )
+        out = GuiDriverCommands().kicad_gui_tree({})
+        assert out["success"] is True
+        assert out["warning"] == "destructive flagging is unavailable"
+
+    def test_gui_tree_has_no_warning_when_seed_loaded(self, monkeypatch):
+        monkeypatch.setattr(
+            GuiDriverCommands,
+            "_call",
+            lambda self, req: {"success": True, "result": _captured_tree()},
+        )
+        out = GuiDriverCommands().kicad_gui_tree({})
+        assert out["success"] is True
+        assert "warning" not in out
 
 
 class TestResolveName:
