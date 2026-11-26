@@ -6,6 +6,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Tools
 
+- **`uninstall_gui_driver`: remove the deployed GUI-driver helper.** The
+  mirror of `install_gui_driver` — deletes
+  `<kicad-data>/<ver>/3rdparty/plugins/com_github_rossvonfange_kicad-gui-driver/`
+  for every KiCad version found where `install_gui_driver` deployed it, and
+  leaves other plugins alone (a copy installed through KiCad's plugin manager,
+  which has no `HELPER_VERSION` marker, is reported as skipped); a helper
+  already loaded in a running KiCad keeps running until restart (#412).
 - **`check_schematic_legibility`: what a reader trips over.** ERC and a
   netlist prove a sheet is connected; they say nothing about whether a person
   can read it. This boxes every symbol body, visible reference and value,

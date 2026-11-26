@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
+import stat
 import sys
 import types
 from pathlib import Path
@@ -38,6 +40,7 @@ from commands.gui_driver import (  # noqa: E402
     flag_destructive_tree,
     is_destructive,
     kicad_plugin_dirs,
+    remove_helper_installed,
     resolve_name,
 )
 
@@ -685,6 +688,171 @@ class TestEnsureHelperInstalled:
         assert out == {"installed": [], "current": []}
 
 
+class TestRemoveHelperInstalled:
+    """remove_helper_installed: the uninstall half of the deploy/remove pair —
+    it deletes ONLY the <HELPER_IDENTIFIER> dir the installer writes."""
+
+    def _plugins_dir(self, tmp_path):
+        d = tmp_path / "9.0" / "3rdparty" / "plugins"
+        d.mkdir(parents=True)
+        return d
+
+    def test_removes_deployed_helper_only(self, tmp_path):
+        plugins = self._plugins_dir(tmp_path)
+        ensure_helper_installed(plugin_dirs=[plugins])
+        neighbour = plugins / "some.other.plugin"
+        neighbour.mkdir()
+        (neighbour / "plugin.py").write_text("# not ours\n")
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        target = plugins / HELPER_IDENTIFIER
+        assert out["removed"] == [str(target)]
+        assert out["not_present"] == []
+        assert out["skipped"] == []
+        assert out["failed"] == []
+        assert not target.exists()
+        assert (neighbour / "plugin.py").is_file()  # other plugins untouched
+
+    def test_plugin_manager_copy_without_marker_is_skipped(self, tmp_path):
+        """KiCad's plugin manager installs the same package into the same dir,
+        without the HELPER_VERSION marker; that copy is not ours to delete."""
+        plugins = self._plugins_dir(tmp_path)
+        target = plugins / HELPER_IDENTIFIER
+        target.mkdir()
+        (target / "__init__.py").write_text("# installed by the plugin manager\n")
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == []
+        assert [s["path"] for s in out["skipped"]] == [str(target)]
+        assert "marker" in out["skipped"][0]["reason"]
+        assert (target / "__init__.py").is_file()
+
+    def test_read_only_files_are_removed(self, tmp_path):
+        """copy2 keeps file modes, so a read-only checkout deploys read-only
+        files; on Windows rmtree alone would stop at the first one."""
+        plugins = self._plugins_dir(tmp_path)
+        ensure_helper_installed(plugin_dirs=[plugins])
+        target = plugins / HELPER_IDENTIFIER
+        for f in target.rglob("*"):
+            if f.is_file():
+                f.chmod(stat.S_IREAD)
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == [str(target)]
+        assert out["failed"] == []
+        assert not target.exists()
+
+    def test_onerror_clears_read_only_bit_and_retries(self, tmp_path):
+        f = tmp_path / "ro.py"
+        f.write_text("x\n")
+        f.chmod(stat.S_IREAD)
+        exc = PermissionError("read-only")
+        gui_driver._rmtree_onerror(os.unlink, str(f), (PermissionError, exc, None))
+        assert not f.exists()
+
+    def test_onerror_reraises_anything_else(self):
+        exc = OSError("Cannot call rmtree on a symbolic link")
+        with pytest.raises(OSError, match="symbolic link"):
+            gui_driver._rmtree_onerror(os.path.islink, "x", (OSError, exc, None))
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="directory junctions are Windows-only")
+    def test_junction_is_not_followed(self, tmp_path):
+        """Path.is_symlink() is False for a junction; rmtree must still refuse
+        it, so the junction's target survives."""
+        import _winapi
+
+        plugins = self._plugins_dir(tmp_path)
+        real = tmp_path / "elsewhere"
+        real.mkdir()
+        (real / HELPER_VERSION_MARKER).write_text("0.0.0\n")
+        (real / "keep.txt").write_text("keep\n")
+        target = plugins / HELPER_IDENTIFIER
+        _winapi.CreateJunction(str(real), str(target))
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == [str(target)]
+        assert (real / "keep.txt").is_file()
+        assert (real / HELPER_VERSION_MARKER).is_file()
+
+    def test_nothing_installed_is_a_noop(self, tmp_path):
+        plugins = self._plugins_dir(tmp_path)
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["not_present"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert out["failed"] == []
+
+    def test_multiple_versions_all_removed(self, tmp_path):
+        dirs = []
+        for ver in ("8.0", "9.0"):
+            d = tmp_path / ver / "3rdparty" / "plugins"
+            d.mkdir(parents=True)
+            dirs.append(d)
+            ensure_helper_installed(plugin_dirs=[d])
+        out = remove_helper_installed(plugin_dirs=dirs)
+        assert len(out["removed"]) == 2
+        assert all(not (d / HELPER_IDENTIFIER).exists() for d in dirs)
+
+    def test_rmtree_failure_is_reported_not_raised(self, tmp_path, monkeypatch):
+        plugins = self._plugins_dir(tmp_path)
+        ensure_helper_installed(plugin_dirs=[plugins])
+
+        def _boom(path, *args, **kwargs):
+            raise OSError("disk on fire")
+
+        monkeypatch.setattr(gui_driver.shutil, "rmtree", _boom)
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert (plugins / HELPER_IDENTIFIER).is_dir()  # left in place
+
+    def test_file_wearing_the_identifier_is_left_alone(self, tmp_path):
+        plugins = self._plugins_dir(tmp_path)
+        decoy = plugins / HELPER_IDENTIFIER
+        decoy.write_text("not a directory\n")
+        out = remove_helper_installed(plugin_dirs=[plugins])
+        assert out["removed"] == []
+        assert out["failed"] == [str(decoy)]
+        assert decoy.is_file()
+
+
+class TestUninstallTool:
+    """uninstall_gui_driver: the tool-level mirror of install_gui_driver."""
+
+    def test_uninstall_removes_and_reports(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        ensure_helper_installed(plugin_dirs=[plugins])
+        out = GuiDriverCommands().uninstall_gui_driver({})
+        assert out["success"] is True
+        assert out["removed"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert out["failed"] == []
+        assert not (plugins / HELPER_IDENTIFIER).exists()
+        assert "Restart KiCad" in out["next"]
+
+    def test_uninstall_when_nothing_installed(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        out = GuiDriverCommands().uninstall_gui_driver({})
+        assert out["success"] is True
+        assert out["removed"] == []
+        assert out["not_present"] == [str(plugins / HELPER_IDENTIFIER)]
+
+    def test_uninstall_failure_is_a_failed_envelope(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        ensure_helper_installed(plugin_dirs=[plugins])
+
+        def _boom(path, *args, **kwargs):
+            raise OSError("disk on fire")
+
+        monkeypatch.setattr(gui_driver.shutil, "rmtree", _boom)
+        out = GuiDriverCommands().uninstall_gui_driver({})
+        assert out["success"] is False
+        assert out["failed"] == [str(plugins / HELPER_IDENTIFIER)]
+        assert "failed" in out["error"]
+
+
 class TestGracefulFailWithSelfInstall:
     """The REQUIRED contract: _call still returns success:False instantly on
     connect failure — self-install only improves the message, never raises."""
@@ -753,6 +921,7 @@ class TestGracefulFailWithSelfInstall:
 
 GUI_TOOL_NAMES = [
     "install_gui_driver",
+    "uninstall_gui_driver",
     "kicad_gui_tree",
     "kicad_gui_click",
     "kicad_run_action_plugin",

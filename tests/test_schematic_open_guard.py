@@ -459,6 +459,7 @@ _NOT_SCHEMATIC_WRITERS = {
     **dict.fromkeys(
         [
             "install_gui_driver",
+            "uninstall_gui_driver",
             "kicad_gui_click",
             "kicad_gui_click_atspi",
             "kicad_gui_screenshot",

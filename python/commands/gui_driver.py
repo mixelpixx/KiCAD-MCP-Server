@@ -31,6 +31,7 @@ import logging
 import os
 import shutil
 import socket
+import stat
 import sys
 import time
 from pathlib import Path
@@ -171,6 +172,85 @@ def ensure_helper_installed(
         except OSError as exc:  # never let self-install break the graceful path
             logger.warning("gui-driver helper install into %s failed: %s", target, exc)
     return {"installed": installed, "current": current}
+
+
+def _rmtree_onerror(func, path, exc_info) -> None:
+    """``shutil.rmtree`` error hook: clear a read-only bit and retry once.
+
+    On Windows ``rmtree`` stops at the first read-only file, leaving a
+    half-removed plugin KiCad would still try to load. ``copy2`` keeps file
+    modes, so a read-only source checkout deploys read-only files. Anything
+    else (including rmtree refusing a link or junction) is re-raised.
+    """
+    exc = exc_info[1]
+    if func in (os.unlink, os.remove, os.rmdir) and isinstance(exc, PermissionError):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+        return
+    raise exc
+
+
+def remove_helper_installed(
+    plugin_dirs: Optional[List[Path]] = None,
+) -> Dict[str, Any]:
+    """Remove the deployed helper from every KiCad version's plugin tree.
+
+    Deletes ONLY the exact dir :func:`ensure_helper_installed` writes:
+    ``<plugins-dir>/<HELPER_IDENTIFIER>/`` carrying the ``HELPER_VERSION``
+    marker file. KiCad's plugin manager installs the same package into the
+    same dir without that marker; such a dir is reported under ``skipped``
+    and left alone, so a plugin-manager install is never deleted underneath
+    it. A file (or link) wearing the identifier name is reported in
+    ``failed``, not deleted: it is not ours to remove.
+
+    Returns ``{"removed": [...], "not_present": [...], "skipped":
+    [{"path": ..., "reason": ...}], "failed": [...]}``. A dir that cannot be
+    removed is reported in ``failed`` and never raises — removal must not
+    break the graceful path the way install doesn't.
+    """
+    if plugin_dirs is None:
+        plugin_dirs = kicad_plugin_dirs()
+    removed: List[str] = []
+    not_present: List[str] = []
+    skipped: List[Dict[str, str]] = []
+    failed: List[str] = []
+    if not HELPER_IDENTIFIER:
+        # An empty identifier would resolve to the plugins dir itself.
+        return {
+            "removed": removed,
+            "not_present": not_present,
+            "skipped": skipped,
+            "failed": [str(p) for p in plugin_dirs],
+        }
+    for plugins_dir in plugin_dirs:
+        target = plugins_dir / HELPER_IDENTIFIER
+        if not target.exists() and not target.is_symlink():
+            not_present.append(str(target))
+            continue
+        if target.is_symlink() or not target.is_dir():
+            logger.warning("gui-driver helper removal skipped %s: not a directory", target)
+            failed.append(str(target))
+            continue
+        if not (target / HELPER_VERSION_MARKER).is_file():
+            skipped.append(
+                {
+                    "path": str(target),
+                    "reason": (
+                        f"no {HELPER_VERSION_MARKER} marker: not deployed by "
+                        "install_gui_driver (likely installed through KiCad's plugin "
+                        "manager; remove it there)"
+                    ),
+                }
+            )
+            continue
+        try:
+            shutil.rmtree(target, onerror=_rmtree_onerror)
+        except OSError as exc:
+            logger.warning("gui-driver helper removal from %s failed: %s", target, exc)
+            failed.append(str(target))
+            continue
+        removed.append(str(target))
+    return {"removed": removed, "not_present": not_present, "skipped": skipped, "failed": failed}
 
 
 # Seed list of destructive menu labels (docs/gui_destructive_seed.txt,
@@ -397,6 +477,46 @@ class GuiDriverCommands:
             "next": (
                 "Set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment, then restart KiCad "
                 "(or Tools > External Plugins > Refresh Plugins) to open the token-gated channel."
+            ),
+        }
+
+    def uninstall_gui_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove the deployed in-KiCad helper from the user's KiCad plugin tree.
+
+        The mirror of install_gui_driver: deletes
+        ``<kicad-data>/<ver>/3rdparty/plugins/<HELPER_IDENTIFIER>/`` for every
+        KiCad version found where install_gui_driver deployed it, and leaves
+        other plugins alone; a copy installed through KiCad's plugin manager
+        is reported under ``skipped``. A helper already
+        loaded in a running KiCad keeps running until KiCad restarts (or
+        Tools > External Plugins > Refresh Plugins) — removal takes effect on
+        the next start. The per-session token file is left in place: it is
+        rewritten whenever the helper next starts, and is inert without it.
+        """
+        try:
+            removed = remove_helper_installed()
+        except Exception as exc:  # noqa: BLE001 — surface as a failed envelope, never raise
+            return {"success": False, "error": f"gui-driver helper uninstall failed: {exc}"}
+        if removed["failed"]:
+            return {
+                "success": False,
+                "error": (
+                    "gui-driver helper uninstall failed for: " + ", ".join(removed["failed"])
+                ),
+                "removed": removed["removed"],
+                "not_present": removed["not_present"],
+                "skipped": removed["skipped"],
+                "failed": removed["failed"],
+            }
+        return {
+            "success": True,
+            "removed": removed["removed"],
+            "not_present": removed["not_present"],
+            "skipped": removed["skipped"],
+            "failed": removed["failed"],
+            "next": (
+                "Restart KiCad (or Tools > External Plugins > Refresh Plugins): a helper "
+                "already loaded in a running KiCad keeps running until then."
             ),
         }
 
