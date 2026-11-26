@@ -929,7 +929,7 @@ For a worked example of per-variant DNP, field overrides and BOM export, see
 - `find_component` - Search by reference or value
 - `get_component_properties` - Query component details
 - `group_components` - Group multiple components
-- `replace_component` - Replace with different footprint
+- `replace_component` - Swap a footprint and value (alias of `edit_component`)
 - `get_component_pads` - Get all pad information
 - `get_component_list` - List all placed components
 - `get_pad_position` - Get precise pad position

@@ -7,6 +7,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { reportsAppliedWork } from "./failure-as-error.js";
 
+/** The references a batch placed, in order, each once (a multi-unit part
+ * places one entry per unit under one reference). */
+export function placedReferences(added: { reference?: string }[]): string {
+  return [...new Set(added.map((a) => a.reference).filter(Boolean))].join(", ");
+}
+
 export function registerSchematicBatchTools(server: McpServer, callKicadScript: Function) {
   // Add many components at once
   server.tool(
@@ -18,7 +24,14 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
         .array(
           z.object({
             symbol: z.string().describe("'Library:SymbolName' (e.g., Device:R)"),
-            reference: z.string().describe("Reference designator (e.g., R1)"),
+            reference: z
+              .string()
+              .optional()
+              .describe(
+                "Reference designator (e.g., R1). Required except for power symbols: for " +
+                  'power:GND, … omit it or pass "#PWR?" to use the next free #PWRnn in the ' +
+                  "project (power:PWR_FLAG: #FLGnn); the reply names the number chosen.",
+              ),
             value: z.string().optional(),
             footprint: z.string().optional(),
             position: z.object({ x: z.number(), y: z.number() }).optional(),
@@ -48,6 +61,9 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
       if (r.success === false && r.message)
         return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [`Added ${r.added_count} component(s), ${r.error_count} error(s).`];
+      // Power symbols sent without a reference come back as #PWRnn/#FLGnn,
+      // so name every placed reference: the caller needs them for wiring.
+      if (r.added?.length) lines.push(`  placed: ${placedReferences(r.added)}`);
       for (const e of r.errors || []) lines.push(`  ✗ ${e.reference} (${e.symbol}): ${e.error}`);
       return { content: [{ type: "text", text: lines.join("\n") }] };
     },
@@ -216,7 +232,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
   // Net labels on many pins
   server.tool(
     "batch_connect",
-    "Place net labels on multiple pins in one call to wire nets quickly. 'connections' is a map {reference: {pin: netName}} where pin is a number or name. labelType selects 'label' (sheet-local, the default) or 'global_label' (connects across all sheets by name — use this for power rails and any net that spans sheets). For local labels, if a facing label for the same net is nearby a wire is drawn instead of a duplicate label; global labels are placed one-per-pin since they join their net by name. Set replace=true to clear any existing label at a pin first. Warns about power nets that have no PWR_FLAG, saying what a flag does and that one belongs only where the rail is supplied from off the sheet (a connector or a battery).",
+    "Place net labels on multiple pins in one call to wire nets quickly. 'connections' is a map {reference: {pin: netName}} where pin is a number or name. labelType selects 'label' (sheet-local, the default) or 'global_label' (connects across all sheets by name — use this for power rails and any net that spans sheets). For local labels, if a facing label for the same net is nearby a wire is drawn instead of a duplicate label; global labels are placed one-per-pin since they join their net by name. Set replace=true to clear any existing label at a pin first. Warns about power nets that have no PWR_FLAG, saying what a flag does and that one belongs only where the rail is supplied from off the sheet (a connector or a battery). Labels can land on Reference/Value text placed earlier; run autoplace_schematic_fields afterwards to move that text clear (connectivity is not touched).",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       connections: z
@@ -257,14 +273,20 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
   // Place + wire in one call
   server.tool(
     "batch_add_and_connect",
-    "Place multiple components AND wire their nets in a single call — the fewest-round-trip way to build a subcircuit. Each component is like batch_add_components plus an optional 'nets' map {pin: netName}. Components are placed first, then nets are connected via batch_connect. labelType selects 'label' (sheet-local, default) or 'global_label' (cross-sheet by name) for all the nets wired in this call.",
+    "Place multiple components AND wire their nets in a single call — the fewest-round-trip way to build a subcircuit. Each component is like batch_add_components plus an optional 'nets' map {pin: netName}. Components are placed first, then nets are connected via batch_connect. labelType selects 'label' (sheet-local, default) or 'global_label' (cross-sheet by name) for all the nets wired in this call. Labels can land on Reference/Value text placed earlier; run autoplace_schematic_fields afterwards to move that text clear (connectivity is not touched).",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       components: z
         .array(
           z.object({
             symbol: z.string(),
-            reference: z.string(),
+            reference: z
+              .string()
+              .optional()
+              .describe(
+                "Reference designator. Optional only for power symbols, which get the next " +
+                  "free #PWRnn (PWR_FLAG: #FLGnn); their nets follow the number chosen.",
+              ),
             value: z.string().optional(),
             footprint: z.string().optional(),
             position: z.object({ x: z.number(), y: z.number() }).optional(),
@@ -295,6 +317,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
       if (r.success === false && r.message)
         return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [r.message];
+      if (r.added?.length) lines.push(`  placed: ${placedReferences(r.added)}`);
       for (const e of r.errors || []) lines.push(`  ✗ add ${e.reference}: ${e.error}`);
       for (const f of r.failed_connections || [])
         lines.push(`  ✗ connect ${f.ref}/${f.pin}: ${f.reason}`);
